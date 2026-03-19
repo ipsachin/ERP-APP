@@ -79,6 +79,7 @@ class JobCardsBoardPage(BasePage):
         self.current_project_code = ""
         self.project_bundle = None
         self.project_cards: List[Dict[str, Any]] = []
+        self.all_jobs_cards: List[Dict[str, Any]] = []
         self._visible_projects: List[Any] = []
 
         self._order_index_map: List[str] = []
@@ -165,13 +166,21 @@ class JobCardsBoardPage(BasePage):
         self._build_summary_tab(self.summary_tab)
 
     def _build_overview_tab(self, parent):
-        top = ttk.Frame(parent)
+        self.overview_subnotebook = ttk.Notebook(parent)
+        self.overview_subnotebook.pack(fill="both", expand=True)
+
+        self.overview_list_tab = ttk.Frame(self.overview_subnotebook)
+        self.overview_kanban_tab = ttk.Frame(self.overview_subnotebook)
+        self.overview_subnotebook.add(self.overview_list_tab, text="Portfolio Summary")
+        self.overview_subnotebook.add(self.overview_kanban_tab, text="All Tasks Kanban")
+
+        top = ttk.Frame(self.overview_list_tab)
         top.pack(fill="x", padx=4, pady=4)
         self.overview_stats_var = tk.StringVar(value="Overview not loaded")
         ttk.Label(top, textvariable=self.overview_stats_var, style="Sub.TLabel").pack(side="left")
         ttk.Button(top, text="Open Selected Job", command=self._open_overview_selection).pack(side="right")
 
-        wrap = ttk.Frame(parent)
+        wrap = ttk.Frame(self.overview_list_tab)
         wrap.pack(fill="both", expand=True)
 
         columns = ("Project", "Client", "Status", "Cards", "Active", "Complete", "Overdue", "StageMix")
@@ -198,6 +207,35 @@ class JobCardsBoardPage(BasePage):
         wrap.rowconfigure(0, weight=1)
         wrap.columnconfigure(0, weight=1)
         self.overview_tree.bind("<Double-1>", lambda e: self._open_overview_selection())
+
+        kanban_top = ttk.Frame(self.overview_kanban_tab)
+        kanban_top.pack(fill="x", padx=4, pady=4)
+        self.overview_kanban_stats_var = tk.StringVar(value="Global kanban not loaded")
+        ttk.Label(kanban_top, textvariable=self.overview_kanban_stats_var, style="Sub.TLabel").pack(side="left")
+
+        kanban_host = ttk.Frame(self.overview_kanban_tab)
+        kanban_host.pack(fill="both", expand=True)
+
+        self.overview_board_canvas = tk.Canvas(kanban_host, highlightthickness=0, bg=AppConfig.COLOR_BG)
+        self.overview_board_xscroll = ttk.Scrollbar(kanban_host, orient="horizontal", command=self.overview_board_canvas.xview)
+        self.overview_board_yscroll = ttk.Scrollbar(kanban_host, orient="vertical", command=self.overview_board_canvas.yview)
+        self.overview_board_canvas.configure(
+            xscrollcommand=self.overview_board_xscroll.set,
+            yscrollcommand=self.overview_board_yscroll.set,
+        )
+        self.overview_board_canvas.grid(row=0, column=0, sticky="nsew")
+        self.overview_board_yscroll.grid(row=0, column=1, sticky="ns")
+        self.overview_board_xscroll.grid(row=1, column=0, sticky="ew")
+        kanban_host.rowconfigure(0, weight=1)
+        kanban_host.columnconfigure(0, weight=1)
+
+        self.overview_board_inner = tk.Frame(self.overview_board_canvas, bg=AppConfig.COLOR_BG)
+        self.overview_board_window = self.overview_board_canvas.create_window((0, 0), window=self.overview_board_inner, anchor="nw")
+        self.overview_board_inner.bind(
+            "<Configure>",
+            lambda e: self.overview_board_canvas.configure(scrollregion=self.overview_board_canvas.bbox("all"))
+        )
+        self.overview_board_canvas.bind("<Configure>", self._resize_overview_board_canvas)
 
     def _build_board_tab(self, parent):
         top = ttk.Frame(parent)
@@ -387,6 +425,7 @@ class JobCardsBoardPage(BasePage):
         if not hasattr(self, "overview_tree"):
             return
         treeview_clear(self.overview_tree)
+        self.all_jobs_cards = []
 
         total_cards = 0
         total_active = 0
@@ -402,6 +441,7 @@ class JobCardsBoardPage(BasePage):
             if not bundle or not getattr(bundle, "project", None):
                 continue
             cards = self._build_cards_from_bundle(bundle)
+            self.all_jobs_cards.extend(cards)
             card_count = len(cards)
             active_count = sum(1 for card in cards if card.get("column") in self.ACTIVE_COLUMNS)
             complete_count = sum(1 for card in cards if card.get("column") == "Complete")
@@ -441,6 +481,100 @@ class JobCardsBoardPage(BasePage):
         if self.current_project_code and self.overview_tree.exists(self.current_project_code):
             self.overview_tree.selection_set(self.current_project_code)
             self.overview_tree.see(self.current_project_code)
+        self._render_overview_global_kanban()
+
+    def _render_overview_global_kanban(self):
+        if not hasattr(self, "overview_board_inner"):
+            return
+        for child in self.overview_board_inner.winfo_children():
+            child.destroy()
+
+        grouped = {name: [] for name in self.BOARD_COLUMNS}
+        for card in self.all_jobs_cards:
+            grouped.setdefault(card["column"], []).append(card)
+
+        for col_idx, col_name in enumerate(self.BOARD_COLUMNS):
+            column_frame = tk.Frame(self.overview_board_inner, bg="#E6E8EB", width=310, padx=6, pady=6)
+            column_frame.grid(row=0, column=col_idx, sticky="ns", padx=8, pady=6)
+            column_frame.grid_propagate(False)
+
+            title = tk.Label(
+                column_frame,
+                text=f"{col_name} ({len(grouped.get(col_name, []))})",
+                font=("Segoe UI", 11, "bold"),
+                bg="#E6E8EB",
+                anchor="w",
+            )
+            title.pack(fill="x", pady=(0, 6))
+
+            cards_wrap = tk.Frame(column_frame, bg="#E6E8EB")
+            cards_wrap.pack(fill="both", expand=True)
+
+            for card in grouped.get(col_name, []):
+                self._render_overview_card(cards_wrap, card)
+
+        total_cards = len(self.all_jobs_cards)
+        active_cards = sum(1 for card in self.all_jobs_cards if card.get("column") in self.ACTIVE_COLUMNS)
+        complete_cards = sum(1 for card in self.all_jobs_cards if card.get("column") == "Complete")
+        overdue_cards = sum(1 for card in self.all_jobs_cards if card.get("color_flag") == "#FFD9D9")
+        self.overview_kanban_stats_var.set(
+            f"All visible job cards: {total_cards}   |   Active: {active_cards}   |   Complete: {complete_cards}   |   Overdue: {overdue_cards}"
+        )
+        self.overview_board_inner.update_idletasks()
+        self.overview_board_canvas.configure(scrollregion=self.overview_board_canvas.bbox("all"))
+
+    def _render_overview_card(self, parent, card: Dict[str, Any]):
+        frame = tk.Frame(parent, bg=card["color_flag"], bd=1, relief="solid", padx=8, pady=6, width=272, cursor="hand2")
+        frame.pack(fill="x", pady=4)
+
+        title = tk.Label(
+            frame,
+            text=f'{card["project_code"]}\n{card["title"]}',
+            bg=card["color_flag"],
+            justify="left",
+            anchor="w",
+            font=("Segoe UI", 10, "bold"),
+        )
+        title.pack(fill="x")
+
+        detail_parts = []
+        if card.get("department"):
+            detail_parts.append(f'Dept: {card["department"]}')
+        detail_parts.append(f'Status: {card.get("status", "")}')
+        if card.get("module_code"):
+            detail_parts.append(f'Module: {card["module_code"]}')
+        if card.get("assigned_to"):
+            detail_parts.append(f'Owner: {card["assigned_to"]}')
+        if card.get("start_at"):
+            detail_parts.append(f'Start: {card["start_at"]}')
+        if card.get("finish_at"):
+            detail_parts.append(f'Finish: {card["finish_at"]}')
+        if card.get("subtasks"):
+            detail_parts.append(f'Done: {card.get("done_count", 0)}/{len(card.get("subtasks", []))}')
+
+        tk.Label(
+            frame,
+            text="\n".join(detail_parts),
+            bg=card["color_flag"],
+            justify="left",
+            anchor="w",
+            font=("Segoe UI", 8),
+            wraplength=230,
+        ).pack(fill="x", pady=(4, 0))
+
+        for widget in (frame, title):
+            widget.bind("<Double-1>", lambda e, code=card["project_code"]: self._open_project_from_overview_card(code))
+
+    def _open_project_from_overview_card(self, project_code: str):
+        if not project_code:
+            return
+        if project_code in self._order_index_map:
+            idx = self._order_index_map.index(project_code)
+            self.order_list.selection_clear(0, tk.END)
+            self.order_list.selection_set(idx)
+            self.order_list.see(idx)
+        self.load_project(project_code)
+        self.notebook.select(self.board_tab)
 
     def _extract_start_finish(self, notes: str):
         start = finish = ""
@@ -1010,6 +1144,12 @@ class JobCardsBoardPage(BasePage):
 
     def _resize_board_canvas(self, event=None):
         self.board_canvas.itemconfigure(self.board_window, height=max(self.board_canvas.winfo_height(), self.board_inner.winfo_reqheight()))
+
+    def _resize_overview_board_canvas(self, event=None):
+        self.overview_board_canvas.itemconfigure(
+            self.overview_board_window,
+            height=max(self.overview_board_canvas.winfo_height(), self.overview_board_inner.winfo_reqheight())
+        )
 
     def _render_structure(self, bundle):
         treeview_clear(self.structure_tree)
