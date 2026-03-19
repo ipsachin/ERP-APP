@@ -929,36 +929,38 @@ class ProductService(BaseService):
         """
         ordered_items = [(module_code, qty), ...]
         """
-        for idx, (module_code, qty) in enumerate(ordered_items, start=1):
-            rows = self.repo.filter_dicts(
-                AppConfig.SHEET_PRODUCT_MODULES,
-                lambda r: norm_text(r.get("ProductCode")) == norm_text(product_code)
-                and norm_text(r.get("ModuleCode")) == norm_text(module_code)
-            )
-            if not rows:
-                continue
-            self.repo.update_row_by_key_name(
-                AppConfig.SHEET_PRODUCT_MODULES,
-                "LinkID",
-                rows[0]["LinkID"],
-                {
-                    "ModuleOrder": idx,
-                    "ModuleQty": max(1, to_int(qty, 1)),
-                    "UpdatedOn": now_str(),
-                }
-            )
-        self._normalize_product_module_order(product_code)
+        with self.repo.batch_update():
+            for idx, (module_code, qty) in enumerate(ordered_items, start=1):
+                rows = self.repo.filter_dicts(
+                    AppConfig.SHEET_PRODUCT_MODULES,
+                    lambda r: norm_text(r.get("ProductCode")) == norm_text(product_code)
+                    and norm_text(r.get("ModuleCode")) == norm_text(module_code)
+                )
+                if not rows:
+                    continue
+                self.repo.update_row_by_key_name(
+                    AppConfig.SHEET_PRODUCT_MODULES,
+                    "LinkID",
+                    rows[0]["LinkID"],
+                    {
+                        "ModuleOrder": idx,
+                        "ModuleQty": max(1, to_int(qty, 1)),
+                        "UpdatedOn": now_str(),
+                    }
+                )
+            self._normalize_product_module_order(product_code)
 
     def _normalize_product_module_order(self, product_code: str) -> None:
         rows = self.get_product_module_links(product_code)
         rows.sort(key=lambda x: x.module_order)
-        for idx, row in enumerate(rows, start=1):
-            self.repo.update_row_by_key_name(
-                AppConfig.SHEET_PRODUCT_MODULES,
-                "LinkID",
-                row.link_id,
-                {"ModuleOrder": idx, "UpdatedOn": now_str()}
-            )
+        with self.repo.batch_update():
+            for idx, row in enumerate(rows, start=1):
+                self.repo.update_row_by_key_name(
+                    AppConfig.SHEET_PRODUCT_MODULES,
+                    "LinkID",
+                    row.link_id,
+                    {"ModuleOrder": idx, "UpdatedOn": now_str()}
+                )
 
     def get_product_module_links(self, product_code: str) -> List[ProductModuleLinkRecord]:
         rows = self.repo.filter_dicts(
@@ -1501,48 +1503,50 @@ class ProjectService(BaseService):
         if not norm_text(project.linked_product_code):
             return
 
-        # Clear only product-derived rows
-        self.repo.delete_rows_where(
-            AppConfig.SHEET_PROJECT_MODULES,
-            lambda r: norm_text(r.get("ProjectCode")) == norm_text(project_code)
-            and norm_text(r.get("SourceType")) == "FROM_PRODUCT"
-        )
+        with self.repo.batch_update():
+            # Clear only product-derived rows
+            self.repo.delete_rows_where(
+                AppConfig.SHEET_PROJECT_MODULES,
+                lambda r: norm_text(r.get("ProjectCode")) == norm_text(project_code)
+                and norm_text(r.get("SourceType")) == "FROM_PRODUCT"
+            )
 
-        product_links = self.product_service.get_product_module_links(project.linked_product_code)
-        ts = now_str()
+            product_links = self.product_service.get_product_module_links(project.linked_product_code)
+            ts = now_str()
 
-        existing = self.get_project_module_links(project_code)
-        order_base = len(existing)
+            existing = self.get_project_module_links(project_code)
+            order_base = len(existing)
 
-        for idx, link in enumerate(product_links, start=1):
-            self.repo.append_dict(AppConfig.SHEET_PROJECT_MODULES, {
-                "LinkID": CodeFactory.project_module_link_id(project_code, link.module_code),
-                "ProjectCode": project_code,
-                "ModuleCode": link.module_code,
-                "SourceType": "FROM_PRODUCT",
-                "SourceCode": project.linked_product_code,
-                "ModuleOrder": order_base + idx,
-                "ModuleQty": max(1, link.module_qty),
-                "Stage": "Not Started",
-                "Status": "Not Started",
-                "DependencyModuleCode": norm_text(link.dependency_module_code),
-                "Notes": norm_text(link.notes),
-                "CreatedOn": ts,
-                "UpdatedOn": ts,
-            })
+            for idx, link in enumerate(product_links, start=1):
+                self.repo.append_dict(AppConfig.SHEET_PROJECT_MODULES, {
+                    "LinkID": CodeFactory.project_module_link_id(project_code, link.module_code),
+                    "ProjectCode": project_code,
+                    "ModuleCode": link.module_code,
+                    "SourceType": "FROM_PRODUCT",
+                    "SourceCode": project.linked_product_code,
+                    "ModuleOrder": order_base + idx,
+                    "ModuleQty": max(1, link.module_qty),
+                    "Stage": "Not Started",
+                    "Status": "Not Started",
+                    "DependencyModuleCode": norm_text(link.dependency_module_code),
+                    "Notes": norm_text(link.notes),
+                    "CreatedOn": ts,
+                    "UpdatedOn": ts,
+                })
 
-        self._normalize_project_module_order(project_code)
+            self._normalize_project_module_order(project_code)
 
     def _normalize_project_module_order(self, project_code: str) -> None:
         rows = self.get_project_module_links(project_code)
         rows.sort(key=lambda x: x.module_order)
-        for idx, row in enumerate(rows, start=1):
-            self.repo.update_row_by_key_name(
-                AppConfig.SHEET_PROJECT_MODULES,
-                "LinkID",
-                row.link_id,
-                {"ModuleOrder": idx, "UpdatedOn": now_str()}
-            )
+        with self.repo.batch_update():
+            for idx, row in enumerate(rows, start=1):
+                self.repo.update_row_by_key_name(
+                    AppConfig.SHEET_PROJECT_MODULES,
+                    "LinkID",
+                    row.link_id,
+                    {"ModuleOrder": idx, "UpdatedOn": now_str()}
+                )
 
     def get_project_module_links(self, project_code: str) -> List[ProjectModuleLinkRecord]:
         rows = self.repo.filter_dicts(
@@ -1588,75 +1592,76 @@ class ProjectService(BaseService):
     def populate_project_tasks_from_modules(self, project_code: str, clear_existing: bool = True) -> None:
         project_links = self.get_project_module_links(project_code)
 
-        if clear_existing:
-            self.repo.delete_rows_where(
-                AppConfig.SHEET_PROJECT_TASKS,
-                lambda r: norm_text(r.get("ProjectCode")) == norm_text(project_code)
-            )
-
-        # For each module, copy module tasks as executable project tasks
-        source_to_project_task_id: Dict[str, str] = {}
-
-        for pm in project_links:
-            module_tasks = self.module_service.get_module_tasks(pm.module_code)
-
-            # First pass create rows without parent/dependency remap
-            pending_rows = []
-            for mt in module_tasks:
-                new_pt_id = CodeFactory.project_task_id(project_code, pm.module_code, mt.task_name)
-                source_to_project_task_id[mt.task_id] = new_pt_id
-                pending_rows.append((mt, new_pt_id))
-
-            # Second pass append with remapped parent/dependency where possible
-            for mt, new_pt_id in pending_rows:
-                self.repo.append_dict(AppConfig.SHEET_PROJECT_TASKS, {
-                    "ProjectTaskID": new_pt_id,
-                    "ProjectCode": project_code,
-                    "ModuleCode": pm.module_code,
-                    "SourceTaskID": mt.task_id,
-                    "ParentProjectTaskID": "",   # remapped below
-                    "TaskName": mt.task_name,
-                    "Department": mt.department,
-                    "EstimatedHours": mt.estimated_hours,
-                    "Stage": mt.stage,
-                    "Status": "Not Started",
-                    "DependencyTaskID": "",      # remapped below
-                    "AssignedTo": "",
-                    "Notes": mt.notes,
-                    "CreatedOn": now_str(),
-                    "UpdatedOn": now_str(),
-                })
-
-        # Remap parent/dependency relationships after creation
-        all_project_tasks = self.get_project_tasks(project_code)
-        source_lookup = {pt.source_task_id: pt for pt in all_project_tasks}
-
-        for pm in project_links:
-            module_tasks = self.module_service.get_module_tasks(pm.module_code)
-            for mt in module_tasks:
-                pt = source_lookup.get(mt.task_id)
-                if not pt:
-                    continue
-
-                parent_project_task_id = ""
-                dep_project_task_id = ""
-
-                if norm_text(mt.parent_task_id) and mt.parent_task_id in source_lookup:
-                    parent_project_task_id = source_lookup[mt.parent_task_id].project_task_id
-
-                if norm_text(mt.dependency_task_id) and mt.dependency_task_id in source_lookup:
-                    dep_project_task_id = source_lookup[mt.dependency_task_id].project_task_id
-
-                self.repo.update_row_by_key_name(
+        with self.repo.batch_update():
+            if clear_existing:
+                self.repo.delete_rows_where(
                     AppConfig.SHEET_PROJECT_TASKS,
-                    "ProjectTaskID",
-                    pt.project_task_id,
-                    {
-                        "ParentProjectTaskID": parent_project_task_id,
-                        "DependencyTaskID": dep_project_task_id,
-                        "UpdatedOn": now_str(),
-                    }
+                    lambda r: norm_text(r.get("ProjectCode")) == norm_text(project_code)
                 )
+
+            # For each module, copy module tasks as executable project tasks
+            source_to_project_task_id: Dict[str, str] = {}
+
+            for pm in project_links:
+                module_tasks = self.module_service.get_module_tasks(pm.module_code)
+
+                # First pass create rows without parent/dependency remap
+                pending_rows = []
+                for mt in module_tasks:
+                    new_pt_id = CodeFactory.project_task_id(project_code, pm.module_code, mt.task_name)
+                    source_to_project_task_id[mt.task_id] = new_pt_id
+                    pending_rows.append((mt, new_pt_id))
+
+                # Second pass append with remapped parent/dependency where possible
+                for mt, new_pt_id in pending_rows:
+                    self.repo.append_dict(AppConfig.SHEET_PROJECT_TASKS, {
+                        "ProjectTaskID": new_pt_id,
+                        "ProjectCode": project_code,
+                        "ModuleCode": pm.module_code,
+                        "SourceTaskID": mt.task_id,
+                        "ParentProjectTaskID": "",
+                        "TaskName": mt.task_name,
+                        "Department": mt.department,
+                        "EstimatedHours": mt.estimated_hours,
+                        "Stage": mt.stage,
+                        "Status": "Not Started",
+                        "DependencyTaskID": "",
+                        "AssignedTo": "",
+                        "Notes": mt.notes,
+                        "CreatedOn": now_str(),
+                        "UpdatedOn": now_str(),
+                    })
+
+            # Remap parent/dependency relationships after creation
+            all_project_tasks = self.get_project_tasks(project_code)
+            source_lookup = {pt.source_task_id: pt for pt in all_project_tasks}
+
+            for pm in project_links:
+                module_tasks = self.module_service.get_module_tasks(pm.module_code)
+                for mt in module_tasks:
+                    pt = source_lookup.get(mt.task_id)
+                    if not pt:
+                        continue
+
+                    parent_project_task_id = ""
+                    dep_project_task_id = ""
+
+                    if norm_text(mt.parent_task_id) and mt.parent_task_id in source_lookup:
+                        parent_project_task_id = source_lookup[mt.parent_task_id].project_task_id
+
+                    if norm_text(mt.dependency_task_id) and mt.dependency_task_id in source_lookup:
+                        dep_project_task_id = source_lookup[mt.dependency_task_id].project_task_id
+
+                    self.repo.update_row_by_key_name(
+                        AppConfig.SHEET_PROJECT_TASKS,
+                        "ProjectTaskID",
+                        pt.project_task_id,
+                        {
+                            "ParentProjectTaskID": parent_project_task_id,
+                            "DependencyTaskID": dep_project_task_id,
+                            "UpdatedOn": now_str(),
+                        }
+                    )
 
     def get_project_tasks(self, project_code: str) -> List[ProjectTaskRecord]:
         rows = self.repo.filter_dicts(
@@ -1881,13 +1886,33 @@ class ProjectService(BaseService):
         project_documents = self.get_project_documents(project_code)
         workorders = self.get_project_workorders(project_code)
 
-        modules: List[ModuleRecord] = []
         total_hours = 0.0
-        seen = set()
+        module_rows = self.repo.list_dicts(AppConfig.SHEET_MODULES)
+        module_lookup: Dict[str, ModuleRecord] = {}
+        for row in module_rows:
+            module_code = norm_text(row.get("ModuleCode"))
+            if not module_code:
+                continue
+            module_lookup[module_code] = ModuleRecord(
+                module_code=module_code,
+                quote_ref=norm_text(row.get("QuoteRef")),
+                module_name=norm_text(row.get("ModuleName")),
+                description=norm_text(row.get("Description")),
+                instruction_text=norm_text(row.get("InstructionText")),
+                estimated_hours=to_float(row.get("EstimatedHours")),
+                stock_on_hand=to_float(row.get("StockOnHand")),
+                status=norm_text(row.get("Status")),
+                created_on=norm_text(row.get("CreatedOn")),
+                updated_on=norm_text(row.get("UpdatedOn")),
+            )
 
+        seen = set()
+        modules: List[ModuleRecord] = []
         for link in module_links:
-            mod = self.module_service.get_module(link.module_code)
-            if mod and link.module_code not in seen:
+            if link.module_code in seen:
+                continue
+            mod = module_lookup.get(link.module_code)
+            if mod:
                 modules.append(mod)
                 seen.add(link.module_code)
 
@@ -1956,27 +1981,35 @@ class ProjectService(BaseService):
                     updated_on=norm_text(r["UpdatedOn"]),
                 )
 
+        task_rows_by_module: Dict[str, List[Dict[str, Any]]] = {}
+        for r in all_task_rows:
+            if norm_text(r.get("OwnerType")) != "MODULE":
+                continue
+            owner_code = norm_text(r.get("OwnerCode"))
+            if not owner_code:
+                continue
+            task_rows_by_module.setdefault(owner_code, []).append(r)
+
         tasks_by_module = {}
         total_hours = 0.0
         for link in links:
             mod_tasks = []
-            for r in all_task_rows:
-                if norm_text(r.get("OwnerType")) == "MODULE" and norm_text(r.get("OwnerCode")) == link.module_code:
-                    mod_tasks.append(TaskRecord(
-                        task_id=norm_text(r["TaskID"]),
-                        owner_type=norm_text(r["OwnerType"]),
-                        owner_code=norm_text(r["OwnerCode"]),
-                        task_name=norm_text(r["TaskName"]),
-                        department=norm_text(r["Department"]),
-                        estimated_hours=to_float(r["EstimatedHours"]),
-                        parent_task_id=norm_text(r["ParentTaskID"]),
-                        dependency_task_id=norm_text(r["DependencyTaskID"]),
-                        stage=norm_text(r["Stage"]),
-                        status=norm_text(r["Status"]),
-                        notes=norm_text(r["Notes"]),
-                        created_on=norm_text(r["CreatedOn"]),
-                        updated_on=norm_text(r["UpdatedOn"]),
-                    ))
+            for r in task_rows_by_module.get(link.module_code, []):
+                mod_tasks.append(TaskRecord(
+                    task_id=norm_text(r["TaskID"]),
+                    owner_type=norm_text(r["OwnerType"]),
+                    owner_code=norm_text(r["OwnerCode"]),
+                    task_name=norm_text(r["TaskName"]),
+                    department=norm_text(r["Department"]),
+                    estimated_hours=to_float(r["EstimatedHours"]),
+                    parent_task_id=norm_text(r["ParentTaskID"]),
+                    dependency_task_id=norm_text(r["DependencyTaskID"]),
+                    stage=norm_text(r["Stage"]),
+                    status=norm_text(r["Status"]),
+                    notes=norm_text(r["Notes"]),
+                    created_on=norm_text(r["CreatedOn"]),
+                    updated_on=norm_text(r["UpdatedOn"]),
+                ))
             tasks_by_module[link.module_code] = mod_tasks
             total_hours += sum(float(t.estimated_hours or 0.0) for t in mod_tasks) * link.module_qty
 
@@ -2411,23 +2444,24 @@ def _project_sync_parts_from_product(self, project_code: str) -> None:
     project = self.get_project(project_code)
     if not project or not norm_text(project.linked_product_code):
         return
-    self.repo.delete_rows_where(
-        AppConfig.SHEET_COMPONENTS,
-        lambda r: norm_text(r.get("OwnerType")) == "PROJECT"
-        and norm_text(r.get("OwnerCode")) == norm_text(project_code)
-        and norm_text(r.get("Notes")).startswith("FROM_PRODUCT:")
-    )
-    for part in self.product_service.get_product_parts(project.linked_product_code):
-        self.add_direct_project_part(
-            project_code=project_code,
-            component_name=part.component_name,
-            qty=part.qty,
-            soh_qty=part.soh_qty,
-            preferred_supplier=part.preferred_supplier,
-            lead_time_days=part.lead_time_days,
-            part_number=part.part_number,
-            notes=f"FROM_PRODUCT:{project.linked_product_code} | {part.notes}",
+    with self.repo.batch_update():
+        self.repo.delete_rows_where(
+            AppConfig.SHEET_COMPONENTS,
+            lambda r: norm_text(r.get("OwnerType")) == "PROJECT"
+            and norm_text(r.get("OwnerCode")) == norm_text(project_code)
+            and norm_text(r.get("Notes")).startswith("FROM_PRODUCT:")
         )
+        for part in self.product_service.get_product_parts(project.linked_product_code):
+            self.add_direct_project_part(
+                project_code=project_code,
+                component_name=part.component_name,
+                qty=part.qty,
+                soh_qty=part.soh_qty,
+                preferred_supplier=part.preferred_supplier,
+                lead_time_days=part.lead_time_days,
+                part_number=part.part_number,
+                notes=f"FROM_PRODUCT:{project.linked_product_code} | {part.notes}",
+            )
 
 
 def _project_autogenerate_workorders(self, project_code: str) -> None:
@@ -2438,34 +2472,35 @@ def _project_autogenerate_workorders(self, project_code: str) -> None:
         w for w in self.get_project_workorders(project_code)
         if not norm_text(w.notes).startswith("AUTO_TRACKER")
     ]
-    self.repo.delete_rows_where(
-        AppConfig.SHEET_WORKORDERS,
-        lambda r: norm_text(r.get("OwnerType")) == "PROJECT"
-        and norm_text(r.get("OwnerCode")) == norm_text(project_code)
-        and norm_text(r.get("Notes")).startswith("AUTO_TRACKER")
-    )
-    module_links = self.get_project_module_links(project_code)
-    start_dt = _parse_iso_date_safe(project.start_date) or _parse_iso_date_safe(project.due_date)
-    current_dt = start_dt
-    for link in module_links:
-        module = self.module_service.get_module(link.module_code)
-        module_tasks = [t for t in self.get_project_tasks(project_code) if norm_text(t.module_code) == norm_text(link.module_code)]
-        depts = sorted({norm_text(t.department) for t in module_tasks if norm_text(t.department)}) or ["Assembly"]
-        for dept in depts:
-            days = _dept_default_days(dept)
-            due_dt = current_dt + timedelta(days=max(0, days - 1)) if current_dt else None
-            wo_name = f"{link.module_code} | {dept}"
-            self.add_project_workorder(
-                project_code=project_code,
-                workorder_name=wo_name,
-                stage=dept,
-                owner=dept,
-                due_date=_format_iso_date_safe(due_dt),
-                status="Open",
-                notes=f"AUTO_TRACKER | MODULE={link.module_code} | SOURCE={link.source_type}",
-            )
-            if current_dt:
-                current_dt = due_dt + timedelta(days=1)
+    with self.repo.batch_update():
+        self.repo.delete_rows_where(
+            AppConfig.SHEET_WORKORDERS,
+            lambda r: norm_text(r.get("OwnerType")) == "PROJECT"
+            and norm_text(r.get("OwnerCode")) == norm_text(project_code)
+            and norm_text(r.get("Notes")).startswith("AUTO_TRACKER")
+        )
+        module_links = self.get_project_module_links(project_code)
+        project_tasks = self.get_project_tasks(project_code)
+        start_dt = _parse_iso_date_safe(project.start_date) or _parse_iso_date_safe(project.due_date)
+        current_dt = start_dt
+        for link in module_links:
+            module_tasks = [t for t in project_tasks if norm_text(t.module_code) == norm_text(link.module_code)]
+            depts = sorted({norm_text(t.department) for t in module_tasks if norm_text(t.department)}) or ["Assembly"]
+            for dept in depts:
+                days = _dept_default_days(dept)
+                due_dt = current_dt + timedelta(days=max(0, days - 1)) if current_dt else None
+                wo_name = f"{link.module_code} | {dept}"
+                self.add_project_workorder(
+                    project_code=project_code,
+                    workorder_name=wo_name,
+                    stage=dept,
+                    owner=dept,
+                    due_date=_format_iso_date_safe(due_dt),
+                    status="Open",
+                    notes=f"AUTO_TRACKER | MODULE={link.module_code} | SOURCE={link.source_type}",
+                )
+                if current_dt:
+                    current_dt = due_dt + timedelta(days=1)
     # preserve manual workorders, autogenerated rows already appended after delete
     return None
 

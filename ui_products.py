@@ -475,8 +475,6 @@ class ProductPage(BasePage):
     def refresh_page(self):
         if not self.require_workbook():
             return
-        
-        self.project_select_top_var = tk.StringVar()
 
         product_code = getattr(self.app, "selected_product_code", "").strip()
         if not product_code:

@@ -62,6 +62,7 @@ class ERPDesktopApp:
         # ----------------------------------------------------
         self.status_var = tk.StringVar(value="Ready. Create or open a workbook to begin.")
         self.pages = {}
+        self.page_classes = {}
 
         self._build_shell()
         self._build_pages()
@@ -121,10 +122,21 @@ class ERPDesktopApp:
             ("parts", PartsPage),
         ]
 
-        for page_name, page_cls in page_classes:
-            page = page_cls(self.page_container, self)
-            page.place(relx=0, rely=0, relwidth=1, relheight=1)
-            self.pages[page_name] = page
+        self.page_classes = dict(page_classes)
+
+    def _ensure_page(self, page_name: str):
+        page = self.pages.get(page_name)
+        if page is not None:
+            return page
+
+        page_cls = self.page_classes.get(page_name)
+        if page_cls is None:
+            raise ValueError(f"Unknown page: {page_name}")
+
+        page = page_cls(self.page_container, self)
+        page.place(relx=0, rely=0, relwidth=1, relheight=1)
+        self.pages[page_name] = page
+        return page
 
     def _load_top_logo(self):
         if Image is None or ImageTk is None:
@@ -160,17 +172,18 @@ class ERPDesktopApp:
     # ========================================================
 
     def show_page(self, page_name: str):
-        if page_name not in self.pages:
+        if page_name not in self.page_classes:
             raise ValueError(f"Unknown page: {page_name}")
 
-        self.pages[page_name].tkraise()
+        page = self._ensure_page(page_name)
+        page.tkraise()
 
         try:
             if page_name == "home":
-                self.pages[page_name].refresh_page()
+                page.refresh_page()
             else:
                 if self.workbook_manager.has_workbook():
-                    self.pages[page_name].refresh_page()
+                    page.refresh_page()
         except Exception as exc:
             self.set_status(f"Page refresh warning: {exc}")
 

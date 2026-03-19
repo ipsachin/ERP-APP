@@ -577,11 +577,14 @@ class HomePage(BasePage):
             return
 
         try:
-            self.refresh_counts()
-            self.refresh_combos()
-            self.refresh_recent_modules()
-            self.refresh_recent_products()
-            self.refresh_recent_projects()
+            modules = self.app.services.modules.list_modules()
+            products = self.app.services.products.list_products()
+            projects = self.app.services.projects.list_projects()
+            self.refresh_counts(modules=modules, products=products, projects=projects)
+            self.refresh_combos(modules=modules, products=products, projects=projects)
+            self.refresh_recent_modules(modules=modules)
+            self.refresh_recent_products(products=products)
+            self.refresh_recent_projects(projects=projects)
         except Exception as exc:
             show_error("Dashboard Refresh Error", str(exc))
 
@@ -599,32 +602,32 @@ class HomePage(BasePage):
         treeview_clear(self.recent_products_tree)
         treeview_clear(self.recent_projects_tree)
 
-    def refresh_counts(self):
+    def refresh_counts(self, modules=None, products=None, projects=None):
         parts_count = 0
         try:
             if hasattr(self.app.services, "parts") and hasattr(self.app.services.parts, "list_parts"):
                 parts_count = len(self.app.services.parts.list_parts())
             else:
-                modules = self.app.services.modules.list_modules()
+                modules = modules if modules is not None else self.app.services.modules.list_modules()
                 for m in modules:
                     if hasattr(self.app.services.modules, "get_module_components"):
                         parts_count += len(self.app.services.modules.get_module_components(m.module_code))
         except Exception:
             parts_count = 0
 
-        modules = self.app.services.modules.list_modules()
-        products = self.app.services.products.list_products()
-        projects = self.app.services.projects.list_projects()
+        modules = modules if modules is not None else self.app.services.modules.list_modules()
+        products = products if products is not None else self.app.services.products.list_products()
+        projects = projects if projects is not None else self.app.services.projects.list_projects()
 
         self.parts_card.config(text=f"Parts\n{parts_count}\nStock, supplier, lead time")
         self.modules_card.config(text=f"Assemblies\n{len(modules)}\nBuild definitions")
         self.products_card.config(text=f"Products\n{len(products)}\nConfigured products")
         self.projects_card.config(text=f"Live Orders\n{len(projects)}\nExecution jobs")
 
-    def refresh_combos(self):
-        modules = self.app.services.modules.list_modules()
-        products = self.app.services.products.list_products()
-        projects = self.app.services.projects.list_projects()
+    def refresh_combos(self, modules=None, products=None, projects=None):
+        modules = modules if modules is not None else self.app.services.modules.list_modules()
+        products = products if products is not None else self.app.services.products.list_products()
+        projects = projects if projects is not None else self.app.services.projects.list_projects()
 
         set_combobox_values(self.module_combo, [m.module_code for m in modules], keep_current=False)
         set_combobox_values(self.product_combo, [p.product_code for p in products], keep_current=False)
@@ -637,11 +640,11 @@ class HomePage(BasePage):
         if getattr(self.app, "selected_project_code", ""):
             self.selected_project_var.set(self.app.selected_project_code)
 
-    def refresh_recent_modules(self):
+    def refresh_recent_modules(self, modules=None):
         treeview_clear(self.recent_modules_tree)
         q = self.module_search_var.get().strip().lower()
 
-        records = self.app.services.modules.list_modules(search_text=q)
+        records = modules if modules is not None and not q else self.app.services.modules.list_modules(search_text=q)
         for m in records[:50]:
             self.recent_modules_tree.insert(
                 "",
@@ -656,11 +659,11 @@ class HomePage(BasePage):
                 )
             )
 
-    def refresh_recent_products(self):
+    def refresh_recent_products(self, products=None):
         treeview_clear(self.recent_products_tree)
         q = self.product_search_var.get().strip().lower()
 
-        records = self.app.services.products.list_products(search_text=q)
+        records = products if products is not None and not q else self.app.services.products.list_products(search_text=q)
         for p in records[:50]:
             self.recent_products_tree.insert(
                 "",
@@ -678,11 +681,11 @@ class HomePage(BasePage):
     def open_parts_manager(self):
         self.show_page("parts")
         
-    def refresh_recent_projects(self):
+    def refresh_recent_projects(self, projects=None):
         treeview_clear(self.recent_projects_tree)
         q = self.project_search_var.get().strip().lower()
 
-        records = self.app.services.projects.list_projects(search_text=q)
+        records = projects if projects is not None and not q else self.app.services.projects.list_projects(search_text=q)
         for p in records[:50]:
             self.recent_projects_tree.insert(
                 "",

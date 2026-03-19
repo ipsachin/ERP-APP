@@ -257,7 +257,7 @@ class SchedulerPage(BasePage):
                 return
 
             filtered_tasks = self._get_filtered_tasks(bundle.project_tasks or [])
-            blockers = self.app.services.scheduler.get_open_blockers_for_project(project_code)
+            blockers = self._build_blockers(bundle.project_tasks or [], bundle.module_links or [], project_code)
             workload = self._build_department_workload(filtered_tasks)
 
             self._load_workload(workload)
@@ -302,6 +302,41 @@ class SchedulerPage(BasePage):
                 continue
             filtered.append(t)
         return filtered
+
+    def _build_blockers(self, tasks, module_links, project_code: str):
+        task_lookup = {norm_text(t.project_task_id): t for t in tasks}
+        module_lookup = {norm_text(m.module_code): m for m in module_links}
+        blockers = []
+
+        for task in tasks:
+            dep_id = norm_text(task.dependency_task_id)
+            if dep_id and dep_id in task_lookup:
+                dep_task = task_lookup[dep_id]
+                if norm_text(dep_task.status) != "Completed":
+                    blockers.append({
+                        "type": "TASK",
+                        "project_code": project_code,
+                        "task_name": task.task_name,
+                        "depends_on": dep_task.task_name,
+                        "current_status": task.status,
+                        "dependency_status": dep_task.status,
+                    })
+
+        for mod in module_links:
+            dep_mod_code = norm_text(mod.dependency_module_code)
+            if dep_mod_code and dep_mod_code in module_lookup:
+                dep_mod = module_lookup[dep_mod_code]
+                if norm_text(dep_mod.status) != "Completed":
+                    blockers.append({
+                        "type": "MODULE",
+                        "project_code": project_code,
+                        "module_code": mod.module_code,
+                        "depends_on": dep_mod.module_code,
+                        "current_status": mod.status,
+                        "dependency_status": dep_mod.status,
+                    })
+
+        return blockers
 
     def _build_department_workload(self, tasks) -> Dict[str, Dict[str, float]]:
         data: Dict[str, Dict[str, float]] = {}

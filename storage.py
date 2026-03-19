@@ -610,6 +610,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
@@ -751,6 +752,9 @@ class ExcelRepository:
         self._wb_cache = None
         self._sheet_cache: Dict[str, List[List[Any]]] = {}
         self._dirty = False
+        self._batch_depth = 0
+        self._pending_save = False
+        self._validated_workbook_path: Optional[str] = None
 
     # --------------------------------------------------------
     # Cache helpers
@@ -774,9 +778,22 @@ class ExcelRepository:
     def reload_cache(self) -> None:
         self._wb_cache = None
         self.invalidate_sheet_cache()
+        self._validated_workbook_path = None
 
     def mark_dirty(self) -> None:
         self._dirty = True
+
+    @contextmanager
+    def batch_update(self):
+        self.ensure_ready()
+        self._batch_depth += 1
+        try:
+            yield
+        finally:
+            self._batch_depth -= 1
+            if self._batch_depth == 0 and self._pending_save:
+                self.save_workbook()
+                self._pending_save = False
 
     # --------------------------------------------------------
     # Workbook file handling
@@ -786,6 +803,9 @@ class ExcelRepository:
         self._wb_cache = None
         self._sheet_cache = {}
         self._dirty = False
+        self._pending_save = False
+        self._batch_depth = 0
+        self._validated_workbook_path = None
 
     def has_workbook(self) -> bool:
         return bool(self.workbook_path)
@@ -798,11 +818,13 @@ class ExcelRepository:
     def ensure_ready(self) -> None:
         workbook_path = self.require_workbook_path()
         AppConfig.ensure_directories()
-        WorkbookSchema.ensure_workbook_structure(workbook_path)
+        if self._validated_workbook_path != workbook_path:
+            WorkbookSchema.ensure_workbook_structure(workbook_path)
+            self._validated_workbook_path = workbook_path
 
     def load_workbook_safe(self):
         workbook_path = self.require_workbook_path()
-        WorkbookSchema.ensure_workbook_structure(workbook_path)
+        self.ensure_ready()
 
         if self._wb_cache is None:
             self._wb_cache = load_workbook(workbook_path)
@@ -820,6 +842,13 @@ class ExcelRepository:
 
         wb.save(workbook_path)
         self._dirty = False
+        self._pending_save = False
+
+    def _save_or_defer(self) -> None:
+        if self._batch_depth > 0:
+            self._pending_save = True
+            return
+        self.save_workbook()
 
     # --------------------------------------------------------
     # Sheet helpers
@@ -914,7 +943,7 @@ class ExcelRepository:
         ws.append(list(values))
         self.mark_dirty()
         self.invalidate_sheet_cache(sheet_name)
-        self.save_workbook()
+        self._save_or_defer()
 
     def append_dict(self, sheet_name: str, row_dict: Dict[str, Any]) -> None:
         headers = self.get_sheet_headers(sheet_name)
@@ -942,7 +971,7 @@ class ExcelRepository:
                     ws.cell(excel_row, col_idx + 1, value)
                 self.mark_dirty()
                 self.invalidate_sheet_cache(sheet_name)
-                self.save_workbook()
+                self._save_or_defer()
                 return True
         return False
 
@@ -992,7 +1021,7 @@ class ExcelRepository:
                     ws.cell(excel_row, i, value)
                 self.mark_dirty()
                 self.invalidate_sheet_cache(sheet_name)
-                self.save_workbook()
+                self._save_or_defer()
                 return True
         return False
 
@@ -1042,7 +1071,7 @@ class ExcelRepository:
                 ws.delete_rows(excel_row, 1)
                 self.mark_dirty()
                 self.invalidate_sheet_cache(sheet_name)
-                self.save_workbook()
+                self._save_or_defer()
                 return True
         return False
 
@@ -1071,7 +1100,7 @@ class ExcelRepository:
         if rows_to_delete:
             self.mark_dirty()
             self.invalidate_sheet_cache(sheet_name)
-            self.save_workbook()
+            self._save_or_defer()
 
         return len(rows_to_delete)
 
@@ -1087,7 +1116,7 @@ class ExcelRepository:
             ws.delete_rows(2, ws.max_row - 1)
             self.mark_dirty()
             self.invalidate_sheet_cache(sheet_name)
-            self.save_workbook()
+            self._save_or_defer()
 
     def rewrite_sheet_data(self, sheet_name: str, rows: List[Sequence[Any]]) -> None:
         self.ensure_ready()
@@ -1105,7 +1134,7 @@ class ExcelRepository:
 
         self.mark_dirty()
         self.invalidate_sheet_cache(sheet_name)
-        self.save_workbook()
+        self._save_or_defer()
 
     def reorder_rows_by_field(
         self,
@@ -1147,7 +1176,7 @@ class ExcelRepository:
         if changed:
             self.mark_dirty()
             self.invalidate_sheet_cache(sheet_name)
-            self.save_workbook()
+            self._save_or_defer()
 
     # --------------------------------------------------------
     # Relationship helpers
