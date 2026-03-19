@@ -85,6 +85,9 @@ class JobCardsBoardPage(BasePage):
         self._card_widgets: Dict[str, tk.Widget] = {}
         self._expanded_cards: set[str] = set()
         self._drag_card_id: str | None = None
+        self._drag_hover_column: str | None = None
+        self._drag_start_xy: tuple[int, int] | None = None
+        self._drag_in_progress = False
 
         self._build_ui()
 
@@ -526,6 +529,31 @@ class JobCardsBoardPage(BasePage):
 
         self.board_inner.update_idletasks()
         self.board_canvas.configure(scrollregion=self.board_canvas.bbox("all"))
+        self._highlight_column(None)
+
+    def _render_kanban_summary(self):
+        total_cards = len(self.project_cards)
+        completed_cards = sum(1 for card in self.project_cards if card.get("column") == "Complete")
+        active_cards = sum(1 for card in self.project_cards if card.get("column") in self.ACTIVE_COLUMNS)
+        overdue_cards = sum(1 for card in self.project_cards if card.get("color_flag") == "#FFD9D9")
+
+        column_counts = []
+        for column_name in self.BOARD_COLUMNS:
+            count = sum(1 for card in self.project_cards if card.get("column") == column_name)
+            if count:
+                column_counts.append(f"{column_name}: {count}")
+
+        summary = [
+            f"Kanban board: {total_cards} card(s)",
+            f"Active {active_cards}",
+            f"Complete {completed_cards}",
+        ]
+        if overdue_cards:
+            summary.append(f"Overdue {overdue_cards}")
+        if column_counts:
+            summary.append(" | ".join(column_counts))
+
+        self.board_hint_var.set("  |  ".join(summary))
 
     def _render_card(self, parent, card: Dict[str, Any]):
         frame = tk.Frame(parent, bg=card["color_flag"], bd=1, relief="solid", padx=8, pady=6, width=272, cursor="hand2")
@@ -602,6 +630,7 @@ class JobCardsBoardPage(BasePage):
 
         for widget in (frame, header, title):
             widget.bind("<ButtonPress-1>", lambda e, cid=card["id"]: self._drag_start(e, cid))
+            widget.bind("<B1-Motion>", lambda e, cid=card["id"]: self._drag_motion(e, cid))
             widget.bind("<ButtonRelease-1>", lambda e, cid=card["id"]: self._drag_release(e, cid))
         toggle_btn.bind("<Button-1>", lambda e, cid=card["id"]: self._toggle_expand(cid))
         return frame
@@ -613,20 +642,72 @@ class JobCardsBoardPage(BasePage):
             self._expanded_cards.add(card_id)
         self._render_board()
 
+    def _set_card_drag_state(self, card_id: str | None, is_active: bool):
+        if not card_id:
+            return
+        widget = self._card_widgets.get(card_id)
+        card = self._find_card(card_id)
+        if not widget or not card:
+            return
+
+        base_bg = card.get("color_flag", "#EFEFEF")
+        active_bg = "#FFF2B8"
+        target_bg = active_bg if is_active else base_bg
+
+        try:
+            widget.configure(
+                bg=target_bg,
+                relief="raised" if is_active else "solid",
+                bd=3 if is_active else 1,
+                highlightthickness=3 if is_active else 0,
+                highlightbackground="#D18B00" if is_active else target_bg,
+            )
+            self._update_card_widget_colors(widget, base_bg, target_bg, active_bg)
+        except Exception:
+            pass
+
+    def _update_card_widget_colors(self, widget, base_bg: str, target_bg: str, active_bg: str):
+        for child in widget.winfo_children():
+            try:
+                if isinstance(child, (tk.Frame, tk.Label)):
+                    current_bg = child.cget("bg")
+                    if current_bg in {base_bg, active_bg}:
+                        child.configure(bg=target_bg)
+                    if isinstance(child, tk.Label):
+                        child.configure(fg="#6E4B00" if target_bg == active_bg else "#000000")
+                self._update_card_widget_colors(child, base_bg, target_bg, active_bg)
+            except Exception:
+                pass
+
     def _drag_start(self, event, card_id: str):
         self._drag_card_id = card_id
-        widget = self._card_widgets.get(card_id)
-        if widget:
-            widget.configure(relief="raised", bd=2)
+        self._drag_start_xy = (event.x_root, event.y_root)
+        self._drag_in_progress = False
+        self._drag_hover_column = None
+        self._set_card_drag_state(card_id, True)
 
-    def _drag_release(self, event, card_id: str):
-        widget = self._card_widgets.get(card_id)
-        if widget:
-            widget.configure(relief="solid", bd=1)
+    def _drag_motion(self, event, card_id: str):
         if self._drag_card_id != card_id:
             return
+        if self._drag_start_xy:
+            dx = abs(event.x_root - self._drag_start_xy[0])
+            dy = abs(event.y_root - self._drag_start_xy[1])
+            if not self._drag_in_progress and max(dx, dy) >= 8:
+                self._drag_in_progress = True
+        if not self._drag_in_progress:
+            return
         target_column = self._hit_test_column(event.x_root, event.y_root)
-        self._drag_card_id = None
+        self._highlight_column(target_column)
+
+    def _drag_release(self, event, card_id: str):
+        self._set_card_drag_state(card_id, False)
+        if self._drag_card_id != card_id:
+            return
+        if not self._drag_in_progress:
+            self._clear_drag_state()
+            return
+        target_column = self._hit_test_column(event.x_root, event.y_root)
+        self._clear_drag_state()
         if not target_column:
             return
         card = self._find_card(card_id)
@@ -641,6 +722,34 @@ class JobCardsBoardPage(BasePage):
             self._render_board()
             self._render_kanban_summary()
             self._render_summary_from_cards()
+
+    def _highlight_column(self, target_column: str | None):
+        if self._drag_hover_column == target_column and target_column is not None:
+            return
+        for name, frame in self._column_frames.items():
+            try:
+                bg = "#D8EAFB" if name == target_column else "#E6E8EB"
+                frame.configure(bg=bg, highlightthickness=2 if name == target_column else 0,
+                                highlightbackground="#4A90E2" if name == target_column else bg)
+                for child in frame.winfo_children():
+                    if isinstance(child, tk.Frame) or isinstance(child, tk.Label):
+                        child.configure(bg=bg)
+            except Exception:
+                pass
+        self._drag_hover_column = target_column
+        if self._drag_in_progress:
+            if target_column:
+                self.board_hint_var.set(f"Drop in: {target_column}")
+            else:
+                self._render_kanban_summary()
+        elif target_column is None:
+            self._render_kanban_summary()
+
+    def _clear_drag_state(self):
+        self._drag_card_id = None
+        self._drag_start_xy = None
+        self._drag_in_progress = False
+        self._highlight_column(None)
 
     def _hit_test_column(self, x_root: int, y_root: int) -> str | None:
         for name, frame in self._column_frames.items():
