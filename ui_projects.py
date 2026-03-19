@@ -25,6 +25,7 @@ from ui_common import (
     show_warning,
     show_error,
     make_readonly_text,
+    get_text_value,
     set_text_readonly,
     open_file_with_default_app,
     Validators,
@@ -2071,6 +2072,7 @@ def _patched_build_right_panel(self, parent):
     tabs.pack(fill='both', expand=True)
     self.modules_tab = ttk.Frame(tabs)
     self.parts_tab = ttk.Frame(tabs)
+    self.all_parts_tab = ttk.Frame(tabs)
     self.tasks_tab = ttk.Frame(tabs)
     self.tracker_tab = ttk.Frame(tabs)
     self.docs_tab = ttk.Frame(tabs)
@@ -2078,6 +2080,7 @@ def _patched_build_right_panel(self, parent):
     self.summary_tab = ttk.Frame(tabs)
     tabs.add(self.modules_tab, text='Order Assemblies')
     tabs.add(self.parts_tab, text='Order Parts')
+    tabs.add(self.all_parts_tab, text='All Parts')
     tabs.add(self.tasks_tab, text='Department Tasks')
     tabs.add(self.tracker_tab, text='Live Order Tracker')
     tabs.add(self.docs_tab, text='Order Docs')
@@ -2085,6 +2088,7 @@ def _patched_build_right_panel(self, parent):
     tabs.add(self.summary_tab, text='Summary')
     self._build_modules_tab(self.modules_tab)
     self._build_order_parts_tab(self.parts_tab)
+    self._build_all_order_parts_tab(self.all_parts_tab)
     self._build_tasks_tab(self.tasks_tab)
     self._build_order_tracker_tab(self.tracker_tab)
     self._build_docs_tab(self.docs_tab)
@@ -2105,6 +2109,32 @@ def _patched_build_order_parts_tab(self, parent):
     ysb = ttk.Scrollbar(wrap, orient='vertical', command=self.order_parts_tree.yview)
     self.order_parts_tree.configure(yscrollcommand=ysb.set, xscrollcommand=xsb.set)
     self.order_parts_tree.pack(side='left', fill='both', expand=True)
+    ysb.pack(side='right', fill='y')
+    xsb.pack(side='bottom', fill='x')
+
+
+def _build_all_order_parts_tab(self, parent):
+    wrap = ttk.Frame(parent, padding=8)
+    wrap.pack(fill='both', expand=True)
+    cols = ('Source', 'Assembly', 'PartName', 'PartNumber', 'Qty', 'SOH', 'Supplier', 'LeadTime', 'Notes')
+    self.all_order_parts_tree = ttk.Treeview(wrap, columns=cols, show='headings')
+    for col, width, title in [
+        ('Source', 110, 'Source'),
+        ('Assembly', 220, 'Assembly'),
+        ('PartName', 220, 'Part Name'),
+        ('PartNumber', 140, 'Part Number'),
+        ('Qty', 80, 'Qty'),
+        ('SOH', 70, 'SOH'),
+        ('Supplier', 160, 'Supplier'),
+        ('LeadTime', 90, 'Lead Time'),
+        ('Notes', 260, 'Notes'),
+    ]:
+        self.all_order_parts_tree.heading(col, text=title)
+        self.all_order_parts_tree.column(col, width=width, anchor='w')
+    xsb = ttk.Scrollbar(wrap, orient='horizontal', command=self.all_order_parts_tree.xview)
+    ysb = ttk.Scrollbar(wrap, orient='vertical', command=self.all_order_parts_tree.yview)
+    self.all_order_parts_tree.configure(yscrollcommand=ysb.set, xscrollcommand=xsb.set)
+    self.all_order_parts_tree.pack(side='left', fill='both', expand=True)
     ysb.pack(side='right', fill='y')
     xsb.pack(side='bottom', fill='x')
 
@@ -2232,6 +2262,82 @@ def _patched_load_order_parts(self, parts):
         self.order_parts_tree.insert('', 'end', values=(p.component_name, p.part_number, p.qty, p.soh_qty, p.preferred_supplier, p.lead_time_days, p.notes), tags=(p.component_id,))
 
 
+def _load_all_order_parts(self, bundle):
+    if not hasattr(self, 'all_order_parts_tree'):
+        return
+    treeview_clear(self.all_order_parts_tree)
+
+    module_service = getattr(self.app.services, 'modules', None)
+    get_module_components = getattr(module_service, 'get_module_components', None)
+    if not callable(get_module_components):
+        return
+
+    module_name_map = {
+        norm_text(getattr(mod, 'module_code', '')): norm_text(getattr(mod, 'module_name', ''))
+        for mod in (getattr(bundle, 'modules', []) or [])
+    }
+
+    for link in (getattr(bundle, 'module_links', []) or []):
+        module_code = norm_text(getattr(link, 'module_code', ''))
+        module_name = module_name_map.get(module_code, module_code)
+        module_qty = getattr(link, 'module_qty', 1) or 1
+        try:
+            module_qty = float(module_qty)
+        except Exception:
+            module_qty = 1.0
+        try:
+            components = get_module_components(module_code)
+        except Exception:
+            components = []
+        for comp in components or []:
+            try:
+                qty = float(getattr(comp, 'qty', 0) or 0) * module_qty
+                soh_qty = float(getattr(comp, 'soh_qty', 0) or 0)
+            except Exception:
+                qty = 0.0
+                soh_qty = 0.0
+            self.all_order_parts_tree.insert(
+                '',
+                'end',
+                values=(
+                    'Assembly',
+                    f"{module_code} | {module_name}",
+                    getattr(comp, 'component_name', ''),
+                    getattr(comp, 'part_number', ''),
+                    f"{qty:g}",
+                    f"{soh_qty:g}",
+                    getattr(comp, 'preferred_supplier', ''),
+                    getattr(comp, 'lead_time_days', ''),
+                    getattr(comp, 'notes', ''),
+                ),
+                tags=(getattr(comp, 'component_id', ''),),
+            )
+
+    for part in (getattr(bundle, 'project_parts', []) or []):
+        try:
+            qty = float(getattr(part, 'qty', 0) or 0)
+            soh_qty = float(getattr(part, 'soh_qty', 0) or 0)
+        except Exception:
+            qty = 0.0
+            soh_qty = 0.0
+        self.all_order_parts_tree.insert(
+            '',
+            'end',
+            values=(
+                'Direct',
+                '',
+                getattr(part, 'component_name', ''),
+                getattr(part, 'part_number', ''),
+                f"{qty:g}",
+                f"{soh_qty:g}",
+                getattr(part, 'preferred_supplier', ''),
+                getattr(part, 'lead_time_days', ''),
+                getattr(part, 'notes', ''),
+            ),
+            tags=(getattr(part, 'component_id', ''),),
+        )
+
+
 def _status_from_workorder(status, due_date):
     st = norm_text(status).lower()
     if st == 'completed':
@@ -2333,7 +2439,39 @@ def _patched_refresh_page(self):
         self._load_order_parts(getattr(bundle, 'project_parts', []))
         self._load_project_documents(bundle.project_documents or [])
         self._load_workorders(bundle.workorders or [])
-        self._load_summary(bundle)
+        try:
+            self._load_summary(bundle)
+        except Exception:
+            try:
+                project = bundle.project
+                set_text_readonly(
+                    self.summary_text,
+                    "\n".join([
+                        f"Order Code: {getattr(project, 'project_code', '')}",
+                        f"Quote Ref: {getattr(project, 'quote_ref', '')}",
+                        f"Order Name: {getattr(project, 'project_name', '')}",
+                        f"Client Name: {getattr(project, 'client_name', '')}",
+                        f"Location: {getattr(project, 'location', '')}",
+                        f"Description: {getattr(project, 'description', '')}",
+                        f"Linked Product: {getattr(project, 'linked_product_code', '')}",
+                        f"Status: {getattr(project, 'status', '')}",
+                        f"Start Date: {getattr(project, 'start_date', '')}",
+                        f"Due Date: {getattr(project, 'due_date', '')}",
+                        "",
+                        f"Assemblies Loaded: {len(getattr(bundle, 'module_links', []) or [])}",
+                        f"Direct Parts Loaded: {len(getattr(bundle, 'project_parts', []) or [])}",
+                        f"Department Tasks: {len(getattr(bundle, 'project_tasks', []) or [])}",
+                        f"Documents: {len(getattr(bundle, 'project_documents', []) or [])}",
+                        f"Job Cards: {len(getattr(bundle, 'workorders', []) or [])}",
+                        f"Total Labour Hours: {float(getattr(bundle, 'total_hours', 0.0) or 0.0):.2f}",
+                    ])
+                )
+            except Exception:
+                pass
+        try:
+            self._load_all_order_parts(bundle)
+        except Exception:
+            pass
         self._load_order_tracker(bundle)
         if hasattr(self, 'live_projects_tree'):
             self.refresh_project_browser()
@@ -2343,6 +2481,20 @@ def _patched_refresh_page(self):
         self._refresh_project_task_dependency_combo(bundle.project_tasks or [])
         self.refresh_project_task_module_dropdown(bundle.module_links or [])
         self.refresh_module_task_dropdown()
+        try:
+            if not get_text_value(self.summary_text):
+                project = bundle.project
+                set_text_readonly(
+                    self.summary_text,
+                    "\n".join([
+                        f"Order Code: {getattr(project, 'project_code', '')}",
+                        f"Quote Ref: {getattr(project, 'quote_ref', '')}",
+                        f"Order Name: {getattr(project, 'project_name', '')}",
+                        f"Status: {getattr(project, 'status', '')}",
+                    ])
+                )
+        except Exception:
+            pass
         self.project_summary_label.config(text=f"📦 {bundle.project.project_name} | Quote: {bundle.project.quote_ref} | Client: {bundle.project.client_name} | Order Code: {bundle.project.project_code}")
         self.set_status(f"Loaded live order: {bundle.project.project_code}")
     except Exception as exc:
@@ -2644,6 +2796,8 @@ ProjectPage._refresh_modules_combo = _v3_refresh_combos
 ProjectPage._open_order_from_details_code = _v3_open_order_from_details_code
 ProjectPage._build_summary_tab = _v3_build_summary_tab
 ProjectPage._load_summary = _v3_load_summary
+ProjectPage._build_all_order_parts_tab = _build_all_order_parts_tab
+ProjectPage._load_all_order_parts = _load_all_order_parts
 
 
 # Import-safe aliases
