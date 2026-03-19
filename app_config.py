@@ -91,6 +91,8 @@ class AppConfig:
         SHEET_PROJECT_TASKS,
         SHEET_PROJECT_DOCUMENTS,
         SHEET_WORKORDERS,
+        SHEET_COMPLETED_JOBS,
+        SHEET_COMPLETED_JOB_LINES,
     ]
 
     # --------------------------------------------------------

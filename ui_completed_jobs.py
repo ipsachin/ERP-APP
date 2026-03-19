@@ -46,15 +46,26 @@ class CompletedJobsPage(BasePage):
         self.text = tk.Text(right)
         self.text.pack(fill="both", expand=True)
 
+    def refresh_page(self):
+        if not self.require_workbook():
+            return
+        self.refresh()
+
     def refresh(self):
         self.listbox.delete(0, tk.END)
         self._map.clear()
+        self.text.delete("1.0", "end")
 
         data = self.app.services.completed_jobs.list_completed_jobs()
 
         for r in data:
             self.listbox.insert(tk.END, f"{r.project_code} | {r.product_name}")
             self._map.append(r.snapshot_id)
+
+        if data:
+            self.listbox.selection_clear(0, tk.END)
+            self.listbox.selection_set(0)
+            self._on_select()
 
     def _on_select(self, e=None):
         if not self.listbox.curselection():

@@ -33,7 +33,7 @@ from models import (
     ProductBundle,
     ProjectBundle,
 )
-from storage import ExcelRepository, now_str, norm_text, to_float, to_int
+from storage import ExcelRepository, WorkbookSchema, now_str, norm_text, to_float, to_int
 
 from datetime import timedelta
 import math
@@ -1255,6 +1255,7 @@ class ProjectService(BaseService):
         )
 
         old_row = None
+        old_status = ""
         if existing_project_code:
             old_row = self.repo.find_row(AppConfig.SHEET_PROJECTS, 0, existing_project_code)
         else:
@@ -1262,6 +1263,7 @@ class ProjectService(BaseService):
 
         if old_row:
             record.created_on = norm_text(old_row[10]) or ts
+            old_status = norm_text(old_row[7])
             self.repo.upsert_dict(AppConfig.SHEET_PROJECTS, "ProjectCode", {
                 "ProjectCode": record.project_code,
                 "QuoteRef": record.quote_ref,
@@ -1295,7 +1297,8 @@ class ProjectService(BaseService):
         if existing_project_code and norm_text(existing_project_code) != project_code:
             self._cascade_project_code_change(existing_project_code, project_code)
 
-        if norm_text(status).lower() == "completed":
+        became_completed = norm_text(status).lower() == "completed" and old_status.lower() != "completed"
+        if became_completed:
             try:
                 self.snapshot_completed_project(project_code)
             except Exception as exc:
@@ -2064,9 +2067,38 @@ class ProjectService(BaseService):
             and norm_text(r.get("OwnerCode")) == norm_text(product_code)
         )
         return rows
+
+    def _ensure_completed_job_sheets(self) -> None:
+        workbook_path = self.repo.require_workbook_path()
+        WorkbookSchema.ensure_workbook_structure(workbook_path)
+        self.repo.reload_cache()
+
+    def _has_completed_snapshot(self, project_code: str) -> bool:
+        rows = self.repo.filter_dicts(
+            AppConfig.SHEET_COMPLETED_JOBS,
+            lambda r: norm_text(r.get("ProjectCode")) == norm_text(project_code)
+        )
+        return any(norm_text(r.get("SnapshotID")) for r in rows)
+
+    def _backfill_completed_project_snapshots(self) -> None:
+        completed_projects = [
+            project for project in self.list_projects("")
+            if norm_text(getattr(project, "status", "")).lower() == "completed"
+        ]
+        for project in completed_projects:
+            if not self._has_completed_snapshot(project.project_code):
+                self.snapshot_completed_project(project.project_code)
     
     def list_completed_jobs(self):
-        rows = self.repo.list_dicts(AppConfig.SHEET_COMPLETED_JOBS)
+        self._ensure_completed_job_sheets()
+        self._backfill_completed_project_snapshots()
+        try:
+            rows = self.repo.list_dicts(AppConfig.SHEET_COMPLETED_JOBS)
+        except ValueError as exc:
+            if "Sheet not found" not in str(exc):
+                raise
+            self._ensure_completed_job_sheets()
+            rows = self.repo.list_dicts(AppConfig.SHEET_COMPLETED_JOBS)
         out = []
         for r in rows:
             if not norm_text(r.get("SnapshotID")):
@@ -2089,6 +2121,7 @@ class ProjectService(BaseService):
     
 
     def snapshot_completed_project(self, project_code: str) -> str:
+        self._ensure_completed_job_sheets()
         project = self.get_project(project_code)
         if not project:
             raise ValueError("Project not found.")
@@ -2190,10 +2223,19 @@ class ProjectService(BaseService):
         return snapshot_id
     
     def get_completed_job_lines(self, snapshot_id: str):
-        rows = self.repo.filter_dicts(
-            AppConfig.SHEET_COMPLETED_JOB_LINES,
-            lambda r: norm_text(r.get("SnapshotID")) == norm_text(snapshot_id)
-        )
+        try:
+            rows = self.repo.filter_dicts(
+                AppConfig.SHEET_COMPLETED_JOB_LINES,
+                lambda r: norm_text(r.get("SnapshotID")) == norm_text(snapshot_id)
+            )
+        except ValueError as exc:
+            if "Sheet not found" not in str(exc):
+                raise
+            self._ensure_completed_job_sheets()
+            rows = self.repo.filter_dicts(
+                AppConfig.SHEET_COMPLETED_JOB_LINES,
+                lambda r: norm_text(r.get("SnapshotID")) == norm_text(snapshot_id)
+            )
         out = []
         for r in rows:
             out.append(SimpleNamespace(
