@@ -79,6 +79,7 @@ class JobCardsBoardPage(BasePage):
         self.current_project_code = ""
         self.project_bundle = None
         self.project_cards: List[Dict[str, Any]] = []
+        self._visible_projects: List[Any] = []
 
         self._order_index_map: List[str] = []
         self._column_frames: Dict[str, tk.Widget] = {}
@@ -148,19 +149,56 @@ class JobCardsBoardPage(BasePage):
         self.notebook = ttk.Notebook(parent)
         self.notebook.pack(fill="both", expand=True)
 
+        self.overview_tab = ttk.Frame(self.notebook)
         self.board_tab = ttk.Frame(self.notebook)
         self.structure_tab = ttk.Frame(self.notebook)
         self.summary_tab = ttk.Frame(self.notebook)
 
+        self.notebook.add(self.overview_tab, text="All Jobs Overview")
         self.notebook.add(self.board_tab, text="Kanban View")
         self.notebook.add(self.structure_tab, text="Order Structure")
         self.notebook.add(self.summary_tab, text="Summary")
 
+        self._build_overview_tab(self.overview_tab)
         self._build_board_tab(self.board_tab)
         self._build_structure_tab(self.structure_tab)
         self._build_summary_tab(self.summary_tab)
 
-    
+    def _build_overview_tab(self, parent):
+        top = ttk.Frame(parent)
+        top.pack(fill="x", padx=4, pady=4)
+        self.overview_stats_var = tk.StringVar(value="Overview not loaded")
+        ttk.Label(top, textvariable=self.overview_stats_var, style="Sub.TLabel").pack(side="left")
+        ttk.Button(top, text="Open Selected Job", command=self._open_overview_selection).pack(side="right")
+
+        wrap = ttk.Frame(parent)
+        wrap.pack(fill="both", expand=True)
+
+        columns = ("Project", "Client", "Status", "Cards", "Active", "Complete", "Overdue", "StageMix")
+        self.overview_tree = ttk.Treeview(wrap, columns=columns, show="headings")
+        for column_name, title, width, anchor in [
+            ("Project", "Project", 230, "w"),
+            ("Client", "Client", 180, "w"),
+            ("Status", "Project Status", 110, "w"),
+            ("Cards", "Cards", 70, "center"),
+            ("Active", "Active", 70, "center"),
+            ("Complete", "Complete", 80, "center"),
+            ("Overdue", "Overdue", 80, "center"),
+            ("StageMix", "Stage Mix", 420, "w"),
+        ]:
+            self.overview_tree.heading(column_name, text=title)
+            self.overview_tree.column(column_name, width=width, anchor=anchor)
+
+        ysb = ttk.Scrollbar(wrap, orient="vertical", command=self.overview_tree.yview)
+        xsb = ttk.Scrollbar(wrap, orient="horizontal", command=self.overview_tree.xview)
+        self.overview_tree.configure(yscrollcommand=ysb.set, xscrollcommand=xsb.set)
+        self.overview_tree.grid(row=0, column=0, sticky="nsew")
+        ysb.grid(row=0, column=1, sticky="ns")
+        xsb.grid(row=1, column=0, sticky="ew")
+        wrap.rowconfigure(0, weight=1)
+        wrap.columnconfigure(0, weight=1)
+        self.overview_tree.bind("<Double-1>", lambda e: self._open_overview_selection())
+
     def _build_board_tab(self, parent):
         top = ttk.Frame(parent)
         top.pack(fill="x", padx=4, pady=4)
@@ -237,6 +275,7 @@ class JobCardsBoardPage(BasePage):
     def refresh_order_list(self):
         self.order_list.delete(0, tk.END)
         self._order_index_map.clear()
+        self._visible_projects = []
         projects = self._list_projects()
         search_text = norm_text(self.order_search_var.get()).lower()
         wanted_status = norm_text(self.order_filter_status_var.get()).lower()
@@ -257,6 +296,8 @@ class JobCardsBoardPage(BasePage):
                 label += f"  |  {status}"
             self.order_list.insert(tk.END, label)
             self._order_index_map.append(code)
+            self._visible_projects.append(p)
+        self._render_all_jobs_overview()
 
     def _list_projects(self):
         svc = getattr(self.app.services, "projects", None) or getattr(self.app.services, "orders", None)
@@ -325,6 +366,81 @@ class JobCardsBoardPage(BasePage):
         self._render_structure(bundle)
         self._render_summary(bundle)
         self._render_kanban_summary()
+        self._render_all_jobs_overview()
+
+    def _open_overview_selection(self):
+        selection = self.overview_tree.selection()
+        if not selection:
+            return
+        project_code = norm_text(selection[0])
+        if not project_code:
+            return
+        if project_code in self._order_index_map:
+            idx = self._order_index_map.index(project_code)
+            self.order_list.selection_clear(0, tk.END)
+            self.order_list.selection_set(idx)
+            self.order_list.see(idx)
+        self.load_project(project_code)
+        self.notebook.select(self.board_tab)
+
+    def _render_all_jobs_overview(self):
+        if not hasattr(self, "overview_tree"):
+            return
+        treeview_clear(self.overview_tree)
+
+        total_cards = 0
+        total_active = 0
+        total_complete = 0
+        total_overdue = 0
+
+        for project in self._visible_projects:
+            project_code = norm_text(getattr(project, "project_code", ""))
+            project_name = norm_text(getattr(project, "project_name", "")) or "Unnamed Order"
+            if not project_code:
+                continue
+            bundle = self._get_project_bundle(project_code)
+            if not bundle or not getattr(bundle, "project", None):
+                continue
+            cards = self._build_cards_from_bundle(bundle)
+            card_count = len(cards)
+            active_count = sum(1 for card in cards if card.get("column") in self.ACTIVE_COLUMNS)
+            complete_count = sum(1 for card in cards if card.get("column") == "Complete")
+            overdue_count = sum(1 for card in cards if card.get("color_flag") == "#FFD9D9")
+
+            stage_mix = []
+            for column_name in self.BOARD_COLUMNS:
+                count = sum(1 for card in cards if card.get("column") == column_name)
+                if count:
+                    stage_mix.append(f"{column_name} {count}")
+
+            total_cards += card_count
+            total_active += active_count
+            total_complete += complete_count
+            total_overdue += overdue_count
+
+            self.overview_tree.insert(
+                "",
+                "end",
+                iid=project_code,
+                values=(
+                    f"{project_code} | {project_name}",
+                    norm_text(getattr(project, "client_name", "")),
+                    norm_text(getattr(project, "status", "")),
+                    card_count,
+                    active_count,
+                    complete_count,
+                    overdue_count,
+                    " | ".join(stage_mix),
+                ),
+            )
+
+        project_total = len(self.overview_tree.get_children())
+        self.overview_stats_var.set(
+            f"Projects: {project_total}   |   Cards: {total_cards}   |   Active: {total_active}   |   Complete: {total_complete}   |   Overdue: {total_overdue}"
+        )
+        if self.current_project_code and self.overview_tree.exists(self.current_project_code):
+            self.overview_tree.selection_set(self.current_project_code)
+            self.overview_tree.see(self.current_project_code)
 
     def _extract_start_finish(self, notes: str):
         start = finish = ""
