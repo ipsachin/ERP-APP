@@ -810,6 +810,19 @@ def setup_ttk_styles(root: tk.Tk) -> None:
         foreground=AppConfig.COLOR_TEXT,
         font=(AppConfig.FONT_FAMILY, 11, "bold"),
     )
+    style.configure(
+        "HomeCard.TLabelframe",
+        background=AppConfig.COLOR_CARD,
+        bordercolor=AppConfig.COLOR_GRID,
+        borderwidth=2,
+        relief="solid",
+    )
+    style.configure(
+        "HomeCard.TLabelframe.Label",
+        background=AppConfig.COLOR_CARD,
+        foreground=AppConfig.COLOR_TEXT,
+        font=(AppConfig.FONT_FAMILY, 11, "bold"),
+    )
 
     # Standard buttons
     style.configure(
@@ -850,6 +863,29 @@ def setup_ttk_styles(root: tk.Tk) -> None:
         background=[
             ("active", AppConfig.COLOR_BG),
             ("pressed", AppConfig.COLOR_BG),
+        ],
+        foreground=[
+            ("active", AppConfig.COLOR_TEXT),
+            ("pressed", AppConfig.COLOR_TEXT),
+        ]
+    )
+    style.configure(
+        "HomeMetric.TButton",
+        font=(AppConfig.FONT_FAMILY, 12, "bold"),
+        padding=14,
+        background=AppConfig.COLOR_CARD,
+        foreground=AppConfig.COLOR_TEXT,
+        borderwidth=2,
+        bordercolor=AppConfig.COLOR_GRID,
+        focusthickness=0,
+        relief="solid",
+        anchor="center",
+    )
+    style.map(
+        "HomeMetric.TButton",
+        background=[
+            ("active", AppConfig.COLOR_HOVER),
+            ("pressed", AppConfig.COLOR_SECONDARY),
         ],
         foreground=[
             ("active", AppConfig.COLOR_TEXT),

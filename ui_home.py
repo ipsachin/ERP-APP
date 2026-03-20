@@ -72,22 +72,25 @@ class HomePage(BasePage):
         brand_block = ttk.Frame(left)
         brand_block.pack(anchor="w")
 
-        self.logo_label = ttk.Label(brand_block, background=AppConfig.COLOR_BG)
-        self.logo_label.pack(anchor="w", pady=(0, 4))
+        title_row = ttk.Frame(brand_block)
+        title_row.pack(anchor="w")
+
+        self.logo_label = ttk.Label(title_row, background=AppConfig.COLOR_BG)
+        self.logo_label.pack(side="left", padx=(0, 10))
+
+        ttk.Label(
+            title_row,
+            text="Project Delivery Suite",
+            style="Title.TLabel"
+        ).pack(side="left")
 
         self._load_company_logo()
 
         ttk.Label(
-            left,
-            text="Project Delivery Suite",
-            style="Title.TLabel"
-        ).pack(anchor="w", pady=(4, 0))
-
-        ttk.Label(
-            left,
+            brand_block,
             text="Parts, assemblies, products, live orders, and scheduling in one desktop system.",
             style="Sub.TLabel",
-        ).pack(anchor="w", pady=(2, 0))
+        ).pack(anchor="w", pady=(4, 0))
 
         right = ttk.Frame(header)
         right.pack(side="right")
@@ -134,7 +137,7 @@ class HomePage(BasePage):
             stats,
             text="Parts\n0\nStock, supplier, lead time",
             command=self.open_parts_manager,
-            style="Metric.TButton"
+            style="HomeMetric.TButton"
         )
         self.parts_card.pack(side="left", fill="x", expand=True, padx=12, ipady=10)
 
@@ -142,7 +145,7 @@ class HomePage(BasePage):
             stats,
             text="Assemblies\n0\nBuild definitions",
             command=self.go_to_assembly_manager,
-            style="Metric.TButton"
+            style="HomeMetric.TButton"
         )
         self.modules_card.pack(side="left", fill="x", expand=True, padx=12, ipady=10)
 
@@ -150,7 +153,7 @@ class HomePage(BasePage):
             stats,
             text="Products\n0\nConfigured products",
             command=self.go_to_products,
-            style="Metric.TButton"
+            style="HomeMetric.TButton"
         )
         self.products_card.pack(side="left", fill="x", expand=True, padx=12, ipady=10)
 
@@ -158,12 +161,12 @@ class HomePage(BasePage):
             stats,
             text="Live Orders\n0\nExecution jobs",
             command=self.go_to_projects,
-            style="Metric.TButton"
+            style="HomeMetric.TButton"
         )
         self.projects_card.pack(side="left", fill="x", expand=True, padx=12, ipady=10)
 
     def _build_quick_actions(self, parent):
-        card = ttk.LabelFrame(parent, text="Quick Create / Open", style="Card.TLabelframe", padding=14)
+        card = ttk.LabelFrame(parent, text="Quick Create / Open", style="HomeCard.TLabelframe", padding=14)
         card.pack(fill="x", pady=(0, 12))
 
         top = ttk.Frame(card)
@@ -208,7 +211,7 @@ class HomePage(BasePage):
         ttk.Button(prj_btns, text="Open Live Order", command=self.open_selected_project).pack(side="left", padx=2)
         ttk.Button(prj_btns, text="Go to Live Orders", command=self.go_to_projects).pack(side="left", padx=2)
 
-        create_card = ttk.LabelFrame(card, text="Quick Create", style="Card.TLabelframe", padding=12)
+        create_card = ttk.LabelFrame(card, text="Quick Create", style="HomeCard.TLabelframe", padding=12)
         create_card.pack(fill="x", pady=(8, 0))
 
         ttk.Label(create_card, text="Type").grid(row=0, column=0, sticky="w", padx=4, pady=4)
@@ -236,7 +239,7 @@ class HomePage(BasePage):
         create_card.columnconfigure(5, weight=1)
 
     def _build_navigation(self, parent):
-        nav_card = ttk.LabelFrame(parent, text="Navigation", style="Card.TLabelframe", padding=12)
+        nav_card = ttk.LabelFrame(parent, text="Navigation", style="HomeCard.TLabelframe", padding=12)
         nav_card.pack(fill="x", pady=(0, 12))
 
         NavStrip(
