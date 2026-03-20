@@ -112,18 +112,7 @@ class HomePage(BasePage):
             self.logo_label.config(text="")
             return
 
-        possible_paths = [
-            BASE_DIR / "logo.png",
-            BASE_DIR / "assets" / "logo.png",
-            BASE_DIR / "assets" / "liquimech_logo.png",
-            BASE_DIR / "assets" / "liquimech_icon.png",
-        ]
-
-        logo_path = None
-        for p in possible_paths:
-            if p.exists():
-                logo_path = p
-                break
+        logo_path = BASE_DIR / "assets" / "liquimech_logo_classic_no_bg.png"
 
         if not logo_path:
             self.logo_label.config(text="")
