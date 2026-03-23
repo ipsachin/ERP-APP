@@ -68,7 +68,6 @@ class ERPDesktopApp:
         self._build_pages()
 
         self.show_page("home")
-        self.update_workbook_label()
 
     # ========================================================
     # Shell
@@ -90,13 +89,6 @@ class ERPDesktopApp:
             text="Liquimech Project Management Suite",
             style="Title.TLabel"
         ).pack(side="left")
-
-        self.workbook_label = ttk.Label(
-            self.topbar,
-            text="No workbook selected",
-            style="Sub.TLabel"
-        )
-        self.workbook_label.pack(side="right")
 
         self.status_bar = ttk.Label(
             self.root,
@@ -207,10 +199,6 @@ class ERPDesktopApp:
             return False
         return True
 
-    def update_workbook_label(self):
-        path = self.workbook_manager.workbook_path or "No workbook selected"
-        self.workbook_label.config(text=path)
-
     def refresh_home_page(self):
         if "home" in self.pages:
             try:
@@ -219,7 +207,6 @@ class ERPDesktopApp:
                 self.set_status(f"Home refresh warning: {exc}")
 
     def refresh_all_pages(self):
-        self.update_workbook_label()
         for name, page in self.pages.items():
             try:
                 page.refresh_page()
@@ -283,7 +270,6 @@ class ERPDesktopApp:
         try:
             if getattr(self.repo, "_dirty", False):
                 self.repo.save_workbook()
-                self.update_workbook_label()
         except Exception as exc:
             self.set_status(f"Save warning: {exc}")
 
