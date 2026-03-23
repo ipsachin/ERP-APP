@@ -292,7 +292,14 @@ class JobCardsBoardPage(BasePage):
 
         frame = ttk.Frame(parent)
         frame.pack(fill="both", expand=True)
-        self.summary_text = tk.Text(frame, wrap="word", height=20)
+        self.summary_text = tk.Text(
+            frame,
+            wrap="word",
+            height=20,
+            bg="#FFFFFF",
+            fg="#000000",
+            insertbackground="#000000",
+        )
         ysb = ttk.Scrollbar(frame, orient="vertical", command=self.summary_text.yview)
         self.summary_text.configure(yscrollcommand=ysb.set)
         self.summary_text.pack(side="left", fill="both", expand=True)

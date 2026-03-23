@@ -151,6 +151,8 @@ def make_readonly_text(parent, height: int = 10, wrap: str = "word") -> tk.Text:
         wrap=wrap,
         font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL),
         bg="#FFFFFF",
+        fg="#000000",
+        insertbackground="#000000",
         relief="solid",
         borderwidth=1,
     )
