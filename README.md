@@ -46,6 +46,11 @@ Build using the spec file:
 pyinstaller "Liquimech ERP.spec"
 ```
 
+If this command does not work, instead of calling pyinstaller directly, use the Python module mechanism, which is more reliable:
+```bash
+python -m PyInstaller '.\Liquimech ERP.spec'
+```
+
 Or build directly from the entry point.
 
 On macOS or Linux:
