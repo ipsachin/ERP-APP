@@ -1,3 +1,21 @@
+# Python
 /__pycache__
 */__pycache__/
-/.venv
+.venv/
+__pycache__/
+*.py[cod]
+
+# Build artifacts
+build/
+dist/
+installer/
+
+# macOS
+.DS_Store
+
+# Runtime / user data
+workspace/exports/
+workspace/temp/
+workspace/module_docs/
+workspace/product_docs/
+workspace/project_docs/
