@@ -16,6 +16,11 @@ class AppConfig:
     WINDOW_HEIGHT = 1040
     MIN_WIDTH = 1440
     MIN_HEIGHT = 860
+    GITHUB_RELEASE_OWNER = "ipsachin"
+    GITHUB_RELEASE_REPO = "ERP-APP"
+    GITHUB_RELEASE_ASSET_NAME = "LiquimechERP-Setup.exe"
+    ENABLE_STARTUP_UPDATE_CHECK = True
+    GITHUB_RELEASE_CHECK_INTERVAL_SECONDS = 86400
 
     # --------------------------------------------------------
     # Theme / UI

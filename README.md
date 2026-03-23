@@ -119,6 +119,28 @@ The generated installer will be written to the folder configured by `OutputDir`,
 installer\
 ```
 
+## Windows auto-update with GitHub Releases
+
+This project can use the built-in Python updater to check the latest GitHub Release, compare versions, download the latest installer, and launch it for the user.
+
+Setup requirements:
+
+- Set `GITHUB_RELEASE_OWNER` in `app_config.py`
+- Set `GITHUB_RELEASE_REPO` in `app_config.py`
+- Set `GITHUB_RELEASE_ASSET_NAME` in `app_config.py`
+- Optionally adjust `GITHUB_RELEASE_CHECK_INTERVAL_SECONDS` in `app_config.py`
+- Upload the Windows installer asset to each GitHub Release using a consistent filename
+
+The updater checks the latest release using GitHub's latest-release API and looks for the configured installer asset.
+
+Important:
+
+- release tags should use a version-like format such as `v1.0.1`
+- the uploaded installer asset name must match `GITHUB_RELEASE_ASSET_NAME`
+- in-app installer launch is currently supported on Windows only
+- automatic startup checks are rate-limited and currently default to once per day
+- users can skip a specific release, and automatic checks will stay quiet until a newer version is published
+
 ## Building the Windows installer from macOS
 
 You can compile the Inno Setup script on macOS using Docker, based on the approach described here:
@@ -172,9 +194,10 @@ dist\Liquimech ERP\Liquimech ERP.exe
    - confirm the logo and bundled assets load
    - open or create a workbook
    - verify exports or temporary files can be written
-9. For installer releases, test the installed app by launching it from the installer and from the desktop shortcut.
-10. Clean up generated artifacts you do not want to commit, then commit only source and packaging definition files.
-11. Distribute either:
+9. If this release should be available through the in-app updater, upload the installer to a GitHub Release and make sure the release tag and installer filename match the updater configuration in `app_config.py`.
+10. For installer releases, test the installed app by launching it from the installer and from the desktop shortcut.
+11. Clean up generated artifacts you do not want to commit, then commit only source and packaging definition files.
+12. Distribute either:
    - the full `dist/Liquimech ERP/` folder for portable distribution
    - or the generated installer from `installer/` for Windows installer distribution
 

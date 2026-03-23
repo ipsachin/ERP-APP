@@ -16,6 +16,7 @@ from storage import WorkbookManager
 from services import ERPServiceHub
 from reports import ReportService
 from mailer import MailerService
+from updater import AppUpdater
 
 from ui_common import setup_ttk_styles
 from ui_home import HomePage
@@ -56,6 +57,7 @@ class ERPDesktopApp:
         self.services = ERPServiceHub(self.repo)
         self.mailer = MailerService()
         self.reports = ReportService(self.services, self.mailer)
+        self.updater = AppUpdater(self)
 
         # ----------------------------------------------------
         # Layout shell
@@ -64,14 +66,39 @@ class ERPDesktopApp:
         self.pages = {}
         self.page_classes = {}
 
+        self._build_menu()
         self._build_shell()
         self._build_pages()
 
         self.show_page("home")
+        self._schedule_startup_update_check()
 
     # ========================================================
     # Shell
     # ========================================================
+
+    def _build_menu(self):
+        menubar = tk.Menu(self.root)
+
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label="Check for Updates", command=lambda: self.check_for_updates(manual=True))
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.destroy)
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="Check for Updates", command=lambda: self.check_for_updates(manual=True))
+        help_menu.add_command(
+            label="About",
+            command=lambda: messagebox.showinfo(
+                "About",
+                f"{AppConfig.APP_TITLE}\nVersion {AppConfig.APP_VERSION}",
+            ),
+        )
+        menubar.add_cascade(label="Help", menu=help_menu)
+
+        self.root.config(menu=menubar)
+        self.menubar = menubar
 
     def _build_shell(self):
         self.topbar = ttk.Frame(self.root, padding=10, style="TFrame")
@@ -100,6 +127,11 @@ class ERPDesktopApp:
 
         self.page_container = ttk.Frame(self.root)
         self.page_container.pack(fill="both", expand=True)
+
+    def _schedule_startup_update_check(self):
+        if not AppConfig.ENABLE_STARTUP_UPDATE_CHECK:
+            return
+        self.root.after(2000, lambda: self.check_for_updates(manual=False))
 
     def _build_pages(self):
         page_classes = [
@@ -193,6 +225,9 @@ class ERPDesktopApp:
 
     def set_status(self, text: str):
         self.status_var.set(text)
+
+    def check_for_updates(self, manual: bool = True):
+        self.updater.check_for_updates(manual=manual)
 
     def require_workbook(self) -> bool:
         if not self.workbook_manager.has_workbook():
@@ -291,9 +326,7 @@ class ERPDesktopApp:
 #     root.mainloop()
 
 def main():
-    print("DEBUG 1")
     root = tk.Tk()
-    print("DEBUG 2")
 
     try:
         from ctypes import windll
@@ -301,11 +334,8 @@ def main():
     except Exception:
         pass
 
-    print("DEBUG 3")
     app = ERPDesktopApp(root)
-    print("DEBUG 4")
     root.mainloop()
-    print("DEBUG 5")
 
 
 # if __name__ == "__main__":
