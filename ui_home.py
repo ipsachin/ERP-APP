@@ -57,10 +57,37 @@ class HomePage(BasePage):
         wrapper.pack(fill="both", expand=True)
 
         self._build_header(wrapper)
-        self._build_stats_row(wrapper)
-        self._build_quick_actions(wrapper)
-        self._build_navigation(wrapper)
-        self._build_recent_tabs(wrapper)
+
+        self.dashboard_splitter = ttk.Panedwindow(wrapper, orient="vertical")
+        self.dashboard_splitter.pack(fill="both", expand=True)
+
+        self.dashboard_top_panel = ttk.Frame(self.dashboard_splitter)
+        self.dashboard_bottom_panel = ttk.Frame(self.dashboard_splitter)
+
+        self.dashboard_splitter.add(self.dashboard_top_panel, weight=2)
+        self.dashboard_splitter.add(self.dashboard_bottom_panel, weight=3)
+
+        self._build_stats_row(self.dashboard_top_panel)
+        self._build_quick_actions(self.dashboard_top_panel)
+        self._build_navigation(self.dashboard_top_panel)
+        self._build_recent_tabs(self.dashboard_bottom_panel)
+
+        self.after_idle(self._set_dashboard_splitter_default)
+
+    def _set_dashboard_splitter_default(self):
+        if not hasattr(self, "dashboard_splitter"):
+            return
+
+        try:
+            total_height = self.dashboard_splitter.winfo_height()
+            if total_height <= 1:
+                total_height = self.winfo_height()
+
+            if total_height > 1:
+                # Bias the layout toward the recent tabs area while keeping the top cards visible.
+                self.dashboard_splitter.sashpos(0, max(260, int(total_height * 0.4)))
+        except Exception:
+            pass
 
     def _build_header(self, parent):
         header = ttk.Frame(parent)
@@ -256,7 +283,10 @@ class HomePage(BasePage):
         ).pack(anchor="w")
 
     def _build_recent_tabs(self, parent):
-        tabs = ttk.Notebook(parent)
+        card = ttk.LabelFrame(parent, text="Recent Activity", style="HomeCard.TLabelframe", padding=8)
+        card.pack(fill="both", expand=True)
+
+        tabs = ttk.Notebook(card)
         tabs.pack(fill="both", expand=True)
 
         self.modules_tab = ttk.Frame(tabs)
