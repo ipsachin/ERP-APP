@@ -35,8 +35,11 @@ class ERPDesktopApp:
         self.root = root
 
         AppConfig.ensure_directories()
+        self.workbook_manager = WorkbookManager()
+        self.repo = self.workbook_manager.repo
 
-        self.root.title(f"{AppConfig.APP_TITLE} v{AppConfig.APP_VERSION}")
+        backend_suffix = "PostgreSQL" if self.workbook_manager.uses_postgres() else "Excel"
+        self.root.title(f"{AppConfig.APP_TITLE} v{AppConfig.APP_VERSION} [{backend_suffix}]")
         self.root.geometry(f"{AppConfig.WINDOW_WIDTH}x{AppConfig.WINDOW_HEIGHT}")
         self.root.minsize(AppConfig.MIN_WIDTH, AppConfig.MIN_HEIGHT)
 
@@ -52,8 +55,6 @@ class ERPDesktopApp:
         # ----------------------------------------------------
         # Core services
         # ----------------------------------------------------
-        self.workbook_manager = WorkbookManager()
-        self.repo = self.workbook_manager.repo
         self.services = ERPServiceHub(self.repo)
         self.mailer = MailerService()
         self.reports = ReportService(self.services, self.mailer)
@@ -62,7 +63,12 @@ class ERPDesktopApp:
         # ----------------------------------------------------
         # Layout shell
         # ----------------------------------------------------
-        self.status_var = tk.StringVar(value="Ready. Create or open a workbook to begin.")
+        initial_status = (
+            f"Connected to {self.workbook_manager.workbook_path}"
+            if self.workbook_manager.uses_postgres()
+            else "Ready. Create or open a workbook to begin."
+        )
+        self.status_var = tk.StringVar(value=initial_status)
         self.pages = {}
         self.page_classes = {}
 

@@ -132,10 +132,16 @@ class HomePage(BasePage):
         btn_row = ttk.Frame(right)
         btn_row.pack(anchor="e")
 
-        ttk.Button(btn_row, text="Create Workbook", command=self.create_workbook).pack(side="left", padx=4)
-        ttk.Button(btn_row, text="Open Workbook", command=self.open_workbook).pack(side="left", padx=4)
+        self.create_workbook_btn = ttk.Button(btn_row, text="Create Workbook", command=self.create_workbook)
+        self.create_workbook_btn.pack(side="left", padx=4)
+        self.open_workbook_btn = ttk.Button(btn_row, text="Open Workbook", command=self.open_workbook)
+        self.open_workbook_btn.pack(side="left", padx=4)
         ttk.Button(btn_row, text="Refresh Dashboard", command=self.refresh_page).pack(side="left", padx=4)
         ttk.Button(btn_row, text="Open Job Cards Board", command=lambda: self.show_page("jobcards")).pack(side="left", padx=4)
+
+        if self.app.workbook_manager.uses_postgres():
+            self.create_workbook_btn.state(["disabled"])
+            self.open_workbook_btn.state(["disabled"])
 
     def _load_company_logo(self):
         if Image is None or ImageTk is None:
@@ -592,7 +598,10 @@ class HomePage(BasePage):
 
     def refresh_page(self):
         path = self.app.workbook_manager.workbook_path
-        self.workbook_label.config(text=path or "No workbook selected")
+        if self.app.workbook_manager.uses_postgres():
+            self.workbook_label.config(text=path or "PostgreSQL connection")
+        else:
+            self.workbook_label.config(text=path or "No workbook selected")
 
         if not self.app.workbook_manager.has_workbook():
             self._reset_dashboard()

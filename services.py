@@ -2069,8 +2069,9 @@ class ProjectService(BaseService):
         return rows
 
     def _ensure_completed_job_sheets(self) -> None:
-        workbook_path = self.repo.require_workbook_path()
-        WorkbookSchema.ensure_workbook_structure(workbook_path)
+        if getattr(self.repo, "backend_name", "excel") == "excel":
+            workbook_path = self.repo.require_workbook_path()
+            WorkbookSchema.ensure_workbook_structure(workbook_path)
         self.repo.reload_cache()
 
     def _has_completed_snapshot(self, project_code: str) -> bool:
