@@ -1290,6 +1290,7 @@ class ModulePage(BasePage):
             return
 
         try:
+            file_path = self.app.services.modules.resolve_document_open_path(doc_id, str(file_path))
             open_file_with_default_app(str(file_path))
         except Exception as exc:
             show_error("Open Document Error", str(exc))

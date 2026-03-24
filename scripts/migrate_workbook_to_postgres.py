@@ -4,6 +4,7 @@ import argparse
 import os
 import re
 import sys
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -136,6 +137,32 @@ INTEGER_FIELDS = {
 UNIT_PRICE_RE = re.compile(r"UnitPrice=([0-9]+(?:\.[0-9]+)?)")
 
 
+@dataclass
+class SheetValidationResult:
+    sheet_name: str
+    present: bool
+    missing_headers: list[str] = field(default_factory=list)
+    extra_headers: list[str] = field(default_factory=list)
+    reordered_headers: list[str] = field(default_factory=list)
+    duplicate_headers: list[str] = field(default_factory=list)
+
+    @property
+    def is_blocking(self) -> bool:
+        return bool(self.missing_headers or self.duplicate_headers)
+
+
+@dataclass
+class WorkbookValidationReport:
+    workbook_path: Path
+    missing_sheets: list[str] = field(default_factory=list)
+    extra_sheets: list[str] = field(default_factory=list)
+    sheet_results: list[SheetValidationResult] = field(default_factory=list)
+
+    @property
+    def has_blocking_issues(self) -> bool:
+        return any(result.is_blocking for result in self.sheet_results)
+
+
 def looks_like_number(value: Any) -> bool:
     if value in (None, ""):
         return False
@@ -232,6 +259,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Delete existing rows from the target tables before import.",
     )
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Validate workbook sheets and headers without importing data.",
+    )
     return parser.parse_args()
 
 
@@ -275,13 +307,105 @@ def truncate_tables(conn) -> None:
     conn.commit()
 
 
+def validate_workbook_schema(workbook_path: Path) -> WorkbookValidationReport:
+    wb = load_workbook(workbook_path, data_only=True)
+    report = WorkbookValidationReport(workbook_path=workbook_path)
+    report.missing_sheets = [sheet for sheet in AppConfig.ALL_SHEETS if sheet not in wb.sheetnames]
+    report.extra_sheets = [sheet for sheet in wb.sheetnames if sheet not in AppConfig.ALL_SHEETS]
+
+    for sheet_name in AppConfig.ALL_SHEETS:
+        if sheet_name not in wb.sheetnames:
+            report.sheet_results.append(SheetValidationResult(sheet_name=sheet_name, present=False))
+            continue
+
+        expected_headers = AppConfig.SHEET_HEADERS[sheet_name]
+        ws = wb[sheet_name]
+        actual_headers = [header for header in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
+        actual_positions: dict[str, int] = {}
+        duplicates: list[str] = []
+        for idx, header in enumerate(actual_headers):
+            if header in (None, ""):
+                continue
+            header_text = str(header)
+            if header_text in actual_positions and header_text not in duplicates:
+                duplicates.append(header_text)
+            actual_positions.setdefault(header_text, idx)
+
+        missing_headers = [header for header in expected_headers if header not in actual_positions]
+        extra_headers = [str(header) for header in actual_headers if header not in (None, "") and str(header) not in expected_headers]
+        reordered_headers = [
+            header
+            for expected_idx, header in enumerate(expected_headers)
+            if header in actual_positions and actual_positions[header] != expected_idx
+        ]
+
+        report.sheet_results.append(
+            SheetValidationResult(
+                sheet_name=sheet_name,
+                present=True,
+                missing_headers=missing_headers,
+                extra_headers=extra_headers,
+                reordered_headers=reordered_headers,
+                duplicate_headers=duplicates,
+            )
+        )
+
+    return report
+
+
+def print_validation_report(report: WorkbookValidationReport) -> None:
+    print(f"Workbook schema preflight: {report.workbook_path}")
+    if report.extra_sheets:
+        print("Extra workbook sheets:")
+        for sheet_name in report.extra_sheets:
+            print(f"- {sheet_name}")
+    if report.missing_sheets:
+        print("Missing expected sheets:")
+        for sheet_name in report.missing_sheets:
+            print(f"- {sheet_name}")
+
+    for result in report.sheet_results:
+        if not result.present:
+            continue
+        if not (result.missing_headers or result.extra_headers or result.reordered_headers or result.duplicate_headers):
+            continue
+        print(f"Sheet: {result.sheet_name}")
+        if result.missing_headers:
+            print(f"- Missing headers: {', '.join(result.missing_headers)}")
+        if result.extra_headers:
+            print(f"- Extra headers: {', '.join(result.extra_headers)}")
+        if result.reordered_headers:
+            print(f"- Reordered headers: {', '.join(result.reordered_headers)}")
+        if result.duplicate_headers:
+            print(f"- Duplicate headers: {', '.join(result.duplicate_headers)}")
+
+    if report.has_blocking_issues:
+        print("Preflight result: blocking schema issues found.")
+    else:
+        print("Preflight result: workbook is compatible for import.")
+
+
 def import_sheet(conn, ws, sheet_name: str) -> int:
     headers = AppConfig.SHEET_HEADERS[sheet_name]
     actual_headers = list(next(ws.iter_rows(min_row=1, max_row=1, values_only=True)))
-    if actual_headers[: len(headers)] != headers:
-        raise ValueError(
-            f"Header mismatch in sheet '{sheet_name}'. Expected {headers}, got {actual_headers[:len(headers)]}."
-        )
+    header_positions: dict[str, int] = {}
+    duplicates: list[str] = []
+    for idx, header in enumerate(actual_headers):
+        if header in (None, ""):
+            continue
+        header_text = str(header)
+        if header_text in header_positions and header_text not in duplicates:
+            duplicates.append(header_text)
+        header_positions.setdefault(header_text, idx)
+
+    missing_headers = [header for header in headers if header not in header_positions]
+    if missing_headers or duplicates:
+        problems: list[str] = []
+        if missing_headers:
+            problems.append(f"missing headers: {', '.join(missing_headers)}")
+        if duplicates:
+            problems.append(f"duplicate headers: {', '.join(duplicates)}")
+        raise ValueError(f"Header mismatch in sheet '{sheet_name}': {'; '.join(problems)}")
 
     table_name = TABLE_NAME_MAP[sheet_name]
     column_names = [COLUMN_NAME_MAP[header] for header in headers]
@@ -309,7 +433,11 @@ def import_sheet(conn, ws, sheet_name: str) -> int:
     imported = 0
     with conn.cursor() as cur:
         for raw_row in non_empty_rows(ws):
-            padded_row = raw_row[: len(headers)] + [None] * (len(headers) - len(raw_row))
+            actual_row = list(raw_row)
+            padded_row = [
+                actual_row[header_positions[header]] if header_positions[header] < len(actual_row) else None
+                for header in headers
+            ]
             padded_row = repair_legacy_row(sheet_name, padded_row)
             values = [normalize_cell(value, header) for header, value in zip(headers, padded_row)]
             if values[0] in (None, ""):
@@ -334,8 +462,16 @@ def main() -> int:
         return 1
 
     print(f"Loaded environment from: {env_path}")
-    if not args.schema_only:
+    if not args.schema_only or args.preflight_only:
         print(f"Workbook: {workbook_path}")
+
+    if not args.schema_only or args.preflight_only:
+        report = validate_workbook_schema(workbook_path)
+        print_validation_report(report)
+        if report.has_blocking_issues:
+            return 1
+        if args.preflight_only:
+            return 0
 
     with connect() as conn:
         if not args.skip_schema:

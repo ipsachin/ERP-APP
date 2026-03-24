@@ -950,6 +950,7 @@ class ProductPage(BasePage):
             return
 
         try:
+            file_path = self.app.services.products.resolve_product_document_open_path(doc_id, str(file_path))
             open_file_with_default_app(str(file_path))
         except Exception as exc:
             show_error("Open Product Document Error", str(exc))

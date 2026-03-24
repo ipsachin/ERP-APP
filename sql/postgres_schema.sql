@@ -210,6 +210,19 @@ CREATE TABLE IF NOT EXISTS completed_job_lines (
     source TEXT
 );
 
+CREATE TABLE IF NOT EXISTS document_blobs (
+    sheet_name TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    original_path TEXT,
+    content_type TEXT,
+    file_data BYTEA NOT NULL,
+    file_size INTEGER,
+    created_on TEXT,
+    updated_on TEXT,
+    PRIMARY KEY (sheet_name, record_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_code ON tasks (owner_code);
 CREATE INDEX IF NOT EXISTS idx_components_owner_code ON components (owner_code);
 CREATE INDEX IF NOT EXISTS idx_documents_owner_code ON documents (owner_code);
@@ -225,3 +238,4 @@ CREATE INDEX IF NOT EXISTS idx_project_documents_project_code ON project_documen
 CREATE INDEX IF NOT EXISTS idx_workorders_owner_code ON workorders (owner_code);
 CREATE INDEX IF NOT EXISTS idx_completed_jobs_project_code ON completed_jobs (project_code);
 CREATE INDEX IF NOT EXISTS idx_completed_job_lines_snapshot_id ON completed_job_lines (snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_document_blobs_sheet_name ON document_blobs (sheet_name);

@@ -610,6 +610,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -1634,17 +1635,106 @@ class PostgresRepository:
         folder.mkdir(parents=True, exist_ok=True)
         return folder
 
-    def get_product_docs_folder(self, product_code: str) -> Path:
-        AppConfig.ensure_directories()
-        folder = AppConfig.PRODUCT_DOCS_DIR / safe_name(product_code)
-        folder.mkdir(parents=True, exist_ok=True)
-        return folder
+    def save_document_blob(
+        self,
+        sheet_name: str,
+        record_id: str,
+        file_name: str,
+        source_file_path: str,
+        created_on: Optional[str] = None,
+        updated_on: Optional[str] = None,
+    ) -> str:
+        src = Path(source_file_path)
+        data = src.read_bytes()
+        content_type = mimetypes.guess_type(src.name)[0] or "application/octet-stream"
+        timestamp = updated_on or created_on or now_str()
+        query = """
+            INSERT INTO document_blobs
+                (sheet_name, record_id, file_name, original_path, content_type, file_data, file_size, created_on, updated_on)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (sheet_name, record_id)
+            DO UPDATE SET
+                file_name = EXCLUDED.file_name,
+                original_path = EXCLUDED.original_path,
+                content_type = EXCLUDED.content_type,
+                file_data = EXCLUDED.file_data,
+                file_size = EXCLUDED.file_size,
+                updated_on = EXCLUDED.updated_on
+        """
 
-    def get_project_docs_folder(self, project_code: str) -> Path:
+        conn, owns_connection = self._get_connection()
+        success = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    query,
+                    [
+                        sheet_name,
+                        record_id,
+                        file_name,
+                        str(src),
+                        content_type,
+                        data,
+                        len(data),
+                        created_on or timestamp,
+                        timestamp,
+                    ],
+                )
+            success = True
+        finally:
+            self._finish_connection(conn, owns_connection, success)
+
+        return f"db://{sheet_name}/{record_id}/{safe_name(file_name)}"
+
+    def get_document_blob(self, sheet_name: str, record_id: str) -> Optional[Dict[str, Any]]:
+        query = """
+            SELECT file_name, original_path, content_type, file_data, file_size, created_on, updated_on
+            FROM document_blobs
+            WHERE sheet_name = %s AND record_id = %s
+        """
+        conn, owns_connection = self._get_connection()
+        success = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, [sheet_name, record_id])
+                row = cur.fetchone()
+            success = True
+            if row is None:
+                return None
+            keys = ["file_name", "original_path", "content_type", "file_data", "file_size", "created_on", "updated_on"]
+            return dict(zip(keys, row))
+        finally:
+            self._finish_connection(conn, owns_connection, success)
+
+    def materialize_document_blob(self, sheet_name: str, record_id: str, fallback_path: str = "") -> Path:
+        blob = self.get_document_blob(sheet_name, record_id)
+        if blob is None:
+            fallback = Path(fallback_path) if fallback_path else None
+            if fallback and fallback.exists():
+                return fallback
+            raise FileNotFoundError(f"No attachment stored for {sheet_name}:{record_id}")
+
         AppConfig.ensure_directories()
-        folder = AppConfig.PROJECT_DOCS_DIR / safe_name(project_code)
+        folder = AppConfig.TEMP_DIR / "db_attachments" / safe_name(sheet_name)
         folder.mkdir(parents=True, exist_ok=True)
-        return folder
+
+        file_name = blob.get("file_name") or Path(fallback_path).name or record_id
+        target = folder / safe_name(file_name)
+        data = blob.get("file_data") or b""
+        if not target.exists() or target.stat().st_size != len(data):
+            target.write_bytes(data)
+        return target
+
+    def delete_document_blob(self, sheet_name: str, record_id: str) -> None:
+        query = "DELETE FROM document_blobs WHERE sheet_name = %s AND record_id = %s"
+        conn, owns_connection = self._get_connection()
+        success = False
+        try:
+            with conn.cursor() as cur:
+                cur.execute(query, [sheet_name, record_id])
+            success = True
+        finally:
+            self._finish_connection(conn, owns_connection, success)
 
 
 # ============================================================

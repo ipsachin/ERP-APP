@@ -571,8 +571,21 @@ class ModuleService(BaseService):
         if not src.exists():
             raise FileNotFoundError(f"Source document not found: {source_file_path}")
 
+        doc_name = src.name
+        doc_id = CodeFactory.document_id(module_code, doc_name)
+        ts = now_str()
+
         target_path = src
-        if copy_file:
+        if getattr(self.repo, "backend_name", "excel") == "postgres":
+            target_path = self.repo.save_document_blob(
+                AppConfig.SHEET_DOCUMENTS,
+                doc_id,
+                doc_name,
+                str(src),
+                created_on=ts,
+                updated_on=ts,
+            )
+        elif copy_file:
             folder = self.repo.get_module_docs_folder(module_code)
             candidate = folder / src.name
             if candidate.exists():
@@ -580,10 +593,6 @@ class ModuleService(BaseService):
             import shutil
             shutil.copy2(src, candidate)
             target_path = candidate
-
-        doc_name = target_path.name
-        doc_id = CodeFactory.document_id(module_code, doc_name)
-        ts = now_str()
 
         self.repo.append_dict(AppConfig.SHEET_DOCUMENTS, {
             "DocID": doc_id,
@@ -606,7 +615,9 @@ class ModuleService(BaseService):
 
     def delete_document(self, doc_id: str, delete_file: bool = False) -> bool:
         row = self.repo.find_row(AppConfig.SHEET_DOCUMENTS, 0, doc_id)
-        if row and delete_file:
+        if getattr(self.repo, "backend_name", "excel") == "postgres":
+            self.repo.delete_document_blob(AppConfig.SHEET_DOCUMENTS, doc_id)
+        elif row and delete_file:
             fp = Path(norm_text(row[6]))
             if fp.exists():
                 try:
@@ -614,6 +625,11 @@ class ModuleService(BaseService):
                 except Exception:
                     pass
         return self.repo.delete_row_by_key_name(AppConfig.SHEET_DOCUMENTS, "DocID", doc_id)
+
+    def resolve_document_open_path(self, doc_id: str, file_path: str) -> str:
+        if getattr(self.repo, "backend_name", "excel") != "postgres":
+            return file_path
+        return str(self.repo.materialize_document_blob(AppConfig.SHEET_DOCUMENTS, doc_id, file_path))
 
     def get_module_documents(self, module_code: str) -> List[DocumentRecord]:
         rows = self.repo.filter_dicts(
@@ -1001,8 +1017,21 @@ class ProductService(BaseService):
         if not src.exists():
             raise FileNotFoundError(f"Source document not found: {source_file_path}")
 
+        doc_name = src.name
+        doc_id = CodeFactory.product_doc_id(product_code, doc_name)
+        ts = now_str()
+
         target_path = src
-        if copy_file:
+        if getattr(self.repo, "backend_name", "excel") == "postgres":
+            target_path = self.repo.save_document_blob(
+                AppConfig.SHEET_PRODUCT_DOCUMENTS,
+                doc_id,
+                doc_name,
+                str(src),
+                created_on=ts,
+                updated_on=ts,
+            )
+        elif copy_file:
             folder = self.repo.get_product_docs_folder(product_code)
             candidate = folder / src.name
             if candidate.exists():
@@ -1010,10 +1039,6 @@ class ProductService(BaseService):
             import shutil
             shutil.copy2(src, candidate)
             target_path = candidate
-
-        doc_name = target_path.name
-        doc_id = CodeFactory.product_doc_id(product_code, doc_name)
-        ts = now_str()
 
         self.repo.append_dict(AppConfig.SHEET_PRODUCT_DOCUMENTS, {
             "ProdDocID": doc_id,
@@ -1035,7 +1060,9 @@ class ProductService(BaseService):
 
     def delete_product_document(self, prod_doc_id: str, delete_file: bool = False) -> bool:
         row = self.repo.find_row(AppConfig.SHEET_PRODUCT_DOCUMENTS, 0, prod_doc_id)
-        if row and delete_file:
+        if getattr(self.repo, "backend_name", "excel") == "postgres":
+            self.repo.delete_document_blob(AppConfig.SHEET_PRODUCT_DOCUMENTS, prod_doc_id)
+        elif row and delete_file:
             fp = Path(norm_text(row[5]))
             if fp.exists():
                 try:
@@ -1043,6 +1070,11 @@ class ProductService(BaseService):
                 except Exception:
                     pass
         return self.repo.delete_row_by_key_name(AppConfig.SHEET_PRODUCT_DOCUMENTS, "ProdDocID", prod_doc_id)
+
+    def resolve_product_document_open_path(self, prod_doc_id: str, file_path: str) -> str:
+        if getattr(self.repo, "backend_name", "excel") != "postgres":
+            return file_path
+        return str(self.repo.materialize_document_blob(AppConfig.SHEET_PRODUCT_DOCUMENTS, prod_doc_id, file_path))
 
     def get_product_documents(self, product_code: str) -> List[ProductDocumentRecord]:
         rows = self.repo.filter_dicts(
@@ -1759,8 +1791,21 @@ class ProjectService(BaseService):
         if not src.exists():
             raise FileNotFoundError(f"Source document not found: {source_file_path}")
 
+        doc_name = src.name
+        doc_id = CodeFactory.project_doc_id(project_code, doc_name)
+        ts = now_str()
+
         target_path = src
-        if copy_file:
+        if getattr(self.repo, "backend_name", "excel") == "postgres":
+            target_path = self.repo.save_document_blob(
+                AppConfig.SHEET_PROJECT_DOCUMENTS,
+                doc_id,
+                doc_name,
+                str(src),
+                created_on=ts,
+                updated_on=ts,
+            )
+        elif copy_file:
             folder = self.repo.get_project_docs_folder(project_code)
             candidate = folder / src.name
             if candidate.exists():
@@ -1768,10 +1813,6 @@ class ProjectService(BaseService):
             import shutil
             shutil.copy2(src, candidate)
             target_path = candidate
-
-        doc_name = target_path.name
-        doc_id = CodeFactory.project_doc_id(project_code, doc_name)
-        ts = now_str()
 
         self.repo.append_dict(AppConfig.SHEET_PROJECT_DOCUMENTS, {
             "ProjectDocID": doc_id,
@@ -1813,7 +1854,9 @@ class ProjectService(BaseService):
 
     def delete_project_document(self, project_doc_id: str, delete_file: bool = False) -> bool:
         row = self.repo.find_row(AppConfig.SHEET_PROJECT_DOCUMENTS, 0, project_doc_id)
-        if row and delete_file:
+        if getattr(self.repo, "backend_name", "excel") == "postgres":
+            self.repo.delete_document_blob(AppConfig.SHEET_PROJECT_DOCUMENTS, project_doc_id)
+        elif row and delete_file:
             fp = Path(norm_text(row[5]))
             if fp.exists():
                 try:
@@ -1821,6 +1864,11 @@ class ProjectService(BaseService):
                 except Exception:
                     pass
         return self.repo.delete_row_by_key_name(AppConfig.SHEET_PROJECT_DOCUMENTS, "ProjectDocID", project_doc_id)
+
+    def resolve_project_document_open_path(self, project_doc_id: str, file_path: str) -> str:
+        if getattr(self.repo, "backend_name", "excel") != "postgres":
+            return file_path
+        return str(self.repo.materialize_document_blob(AppConfig.SHEET_PROJECT_DOCUMENTS, project_doc_id, file_path))
 
     # --------------------------------------------------------
     # Project workorders

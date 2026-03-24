@@ -1837,6 +1837,7 @@ class ProjectPage(BasePage):
             return
 
         try:
+            file_path = self.app.services.projects.resolve_project_document_open_path(doc_id, str(file_path))
             open_file_with_default_app(str(file_path))
         except Exception as exc:
             show_error("Open Project Document Error", str(exc))
