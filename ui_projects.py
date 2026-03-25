@@ -109,51 +109,6 @@ class ProjectPage(BasePage):
     # ========================================================
     # UI
     # ========================================================
-    # def _build_ui(self):
-    #     wrapper = ttk.Frame(self, padding=14)
-    #     wrapper.pack(fill="both", expand=True)
-
-    #     self._build_topbar(wrapper)
-
-    #     paned = ttk.Panedwindow(wrapper, orient="horizontal")
-    #     paned.pack(fill="both", expand=True)
-
-    #     # LEFT SCROLLABLE
-    #     left_host = ttk.Frame(paned)
-    #     right = ttk.Frame(paned, padding=6)
-
-    #     paned.add(left_host, weight=2)
-    #     paned.add(right, weight=3)
-
-    #     self.left_canvas = tk.Canvas(left_host, highlightthickness=0)
-    #     self.left_scrollbar = ttk.Scrollbar(left_host, orient="vertical", command=self.left_canvas.yview)
-
-    #     self.left_frame = ttk.Frame(self.left_canvas)
-
-    #     self.left_frame.bind(
-    #         "<Configure>",
-    #         lambda e: self.left_canvas.configure(scrollregion=self.left_canvas.bbox("all"))
-    #     )
-
-    #     self.canvas_window = self.left_canvas.create_window(
-    #         (0, 0),
-    #         window=self.left_frame,
-    #         anchor="nw"
-    #     )
-
-    #     def resize(event):
-    #         self.left_canvas.itemconfig(self.canvas_window, width=event.width)
-
-    #     self.left_canvas.bind("<Configure>", resize)
-    #     self.left_canvas.configure(yscrollcommand=self.left_scrollbar.set)
-
-    #     self.left_canvas.pack(side="left", fill="both", expand=True)
-    #     self.left_scrollbar.pack(side="right", fill="y")
-
-    #     # build UI inside scrollable frame
-    #     self._build_left_panel(self.left_frame)
-    #     self._build_right_panel(right)
-    #     self._bind_mousewheel()
 
     def _build_ui(self):
         wrapper = ttk.Frame(self, padding=14)
@@ -216,40 +171,6 @@ class ProjectPage(BasePage):
 
         self.left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
-    # def _build_ui(self):
-    #     wrapper = ttk.Frame(self, padding=14)
-    #     wrapper.pack(fill="both", expand=True)
-
-    #     self._build_topbar(wrapper)
-
-    #     self.project_summary_label = ttk.Label(
-    #         wrapper,
-    #         text="No live project selected",
-    #         style="Title.TLabel"
-    #     )
-    #     self.project_summary_label.pack(anchor="w", pady=(0, 10))
-
-    #     paned = ttk.Panedwindow(wrapper, orient="horizontal")
-    #     paned.pack(fill="both", expand=True)
-
-    #     left = ttk.Frame(paned, padding=6)
-    #     right = ttk.Frame(paned, padding=6)
-
-    #     paned.add(left, weight=2)
-    #     paned.add(right, weight=3)
-
-    #     self._build_left_panel(left)
-    #     self._build_right_panel(right)
-
-    # def _build_topbar(self, parent):
-    #     top = ttk.Frame(parent)
-    #     top.pack(fill="x", pady=(0, 8))
-
-    #     ttk.Button(top, text="← Back to Dashboard", command=lambda: self.show_page("home")).pack(side="left", padx=2)
-
-    #     ttk.Button(top, text="Refresh", command=self.refresh_page).pack(side="right", padx=2)
-    #     ttk.Button(top, text="Email Project PDF", command=self.email_project_pdf).pack(side="right", padx=2)
-    #     ttk.Button(top, text="Generate Project PDF", command=self.generate_project_pdf).pack(side="right", padx=2)
 
     def _build_topbar(self, parent):
         top = ttk.Frame(parent)
@@ -312,11 +233,6 @@ class ProjectPage(BasePage):
         self.refresh_page()
 
     def _build_left_panel(self, parent):
-        # self._build_project_details_card(parent)
-        # self._build_project_module_builder_card(parent)
-        # self._build_project_task_editor_card(parent)
-        # self._build_project_document_card(parent)
-        # self._build_workorder_card(parent)
         self._build_project_browser_card(parent)
         self._build_project_details_card(parent)
         self._build_project_module_builder_card(parent)
@@ -657,71 +573,6 @@ class ProjectPage(BasePage):
         ttk.Button(btn_row, text="Remove Selected Module", command=self.remove_selected_project_module).pack(side="left", fill="x", expand=True, padx=2)
 
         card.columnconfigure(1, weight=1)
-
-    # def _build_project_task_editor_card(self, parent):
-    #     card = ttk.LabelFrame(parent, text="Project Task Execution Editor", style="Card.TLabelframe", padding=12)
-    #     card.pack(fill="x", pady=6)
-
-    #     ttk.Label(card, text="Task Name").grid(row=0, column=0, sticky="w", pady=4)
-    #     ttk.Entry(card, textvariable=self.project_task_name_var).grid(row=0, column=1, sticky="ew", padx=6)
-
-    #     ttk.Label(card, text="Module").grid(row=1, column=0, sticky="w", pady=4)
-    #     self.project_task_module_combo = ttk.Combobox(
-    #         card,
-    #         textvariable=self.project_task_module_var,
-    #         state="readonly"
-    #     )
-    #     self.project_task_module_combo.grid(row=1, column=1, sticky="ew", padx=6)
-
-    #     ttk.Label(card, text="Department").grid(row=2, column=0, sticky="w", pady=4)
-    #     ttk.Combobox(
-    #         card,
-    #         textvariable=self.project_task_department_var,
-    #         values=AppConfig.DEPARTMENTS,
-    #         state="readonly"
-    #     ).grid(row=2, column=1, sticky="ew", padx=6)
-
-    #     ttk.Label(card, text="Hours").grid(row=3, column=0, sticky="w", pady=4)
-    #     ttk.Entry(card, textvariable=self.project_task_hours_var).grid(row=3, column=1, sticky="ew", padx=6)
-
-    #     ttk.Label(card, text="Stage").grid(row=4, column=0, sticky="w", pady=4)
-    #     ttk.Combobox(
-    #         card,
-    #         textvariable=self.project_task_stage_var,
-    #         values=AppConfig.MODULE_EXEC_STAGES,
-    #         state="readonly"
-    #     ).grid(row=4, column=1, sticky="ew", padx=6)
-
-    #     ttk.Label(card, text="Status").grid(row=5, column=0, sticky="w", pady=4)
-    #     ttk.Combobox(
-    #         card,
-    #         textvariable=self.project_task_status_var,
-    #         values=AppConfig.TASK_STATUSES,
-    #         state="readonly"
-    #     ).grid(row=5, column=1, sticky="ew", padx=6)
-
-    #     ttk.Label(card, text="Dependency Task").grid(row=6, column=0, sticky="w", pady=4)
-    #     self.project_task_dependency_combo = ttk.Combobox(
-    #         card,
-    #         textvariable=self.project_task_dependency_var,
-    #         state="readonly"
-    #     )
-    #     self.project_task_dependency_combo.grid(row=6, column=1, sticky="ew", padx=6)
-
-    #     ttk.Label(card, text="Assigned To").grid(row=7, column=0, sticky="w", pady=4)
-    #     ttk.Entry(card, textvariable=self.project_task_assigned_to_var).grid(row=7, column=1, sticky="ew", padx=6)
-
-    #     ttk.Label(card, text="Notes").grid(row=8, column=0, sticky="w", pady=4)
-    #     ttk.Entry(card, textvariable=self.project_task_notes_var).grid(row=8, column=1, sticky="ew", padx=6)
-
-    #     btn_row = ttk.Frame(card)
-    #     btn_row.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-    #     ttk.Button(btn_row, text="Update Selected Task", command=self.update_selected_project_task).pack(side="left", fill="x", expand=True, padx=2)
-    #     ttk.Button(btn_row, text="Delete Selected Task", command=self.delete_selected_project_task).pack(side="left", fill="x", expand=True, padx=2)
-    #     ttk.Button(btn_row, text="Clear", command=self.clear_project_task_editor).pack(side="left", fill="x", expand=True, padx=2)
-
-    #     card.columnconfigure(1, weight=1)
-
     
 
     def _build_project_task_editor_card(self, parent):
@@ -1106,26 +957,18 @@ class ProjectPage(BasePage):
                 self.project_summary_label.config(text="Project not found")
                 return
 
-            # self._load_project_into_form(bundle.project)
-            # self._load_project_modules(bundle.module_links or [])
-            # self._load_project_tasks(bundle.project_tasks or [])
-            # self._load_project_documents(bundle.project_documents or [])
-            # self._load_workorders(bundle.workorders or [])
-            # self._load_summary(bundle)
             self._load_project_into_form(bundle.project)
             self._load_project_modules(bundle.module_links or [])
             self._load_project_tasks(bundle.project_tasks or [])
             self._load_project_documents(bundle.project_documents or [])
             self._load_workorders(bundle.workorders or [])
             self._load_summary(bundle)
-            # self.refresh_project_browser()
             if hasattr(self, "live_projects_tree"):
                  self.refresh_project_browser()
             self._refresh_products_combo()
             self._refresh_modules_combo()
             self._refresh_project_module_dependency_combo(bundle.module_links or [])
             self._refresh_project_task_dependency_combo(bundle.project_tasks or [])
-            # self._refresh_project_task_module_combo(bundle.module_links or [])
             self.refresh_project_task_module_dropdown(bundle.module_links or [])
             self.refresh_module_task_dropdown()
 

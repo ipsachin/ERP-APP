@@ -107,15 +107,6 @@ class ProductPage(BasePage):
         self._build_left_panel(left)
         self._build_right_panel(right)
 
-    # def _build_topbar(self, parent):
-    #     top = ttk.Frame(parent)
-    #     top.pack(fill="x", pady=(0, 8))
-
-    #     ttk.Button(top, text="← Back to Dashboard", command=lambda: self.show_page("home")).pack(side="left", padx=2)
-
-    #     ttk.Button(top, text="Refresh", command=self.refresh_page).pack(side="right", padx=2)
-    #     ttk.Button(top, text="Email Quote PDF", command=self.email_product_pdf).pack(side="right", padx=2)
-    #     ttk.Button(top, text="Generate Quote PDF", command=self.generate_product_pdf).pack(side="right", padx=2)
 
     def _build_topbar(self, parent):
         top = ttk.Frame(parent)

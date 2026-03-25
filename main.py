@@ -319,18 +319,6 @@ class ERPDesktopApp:
 # Main launcher
 # ============================================================
 
-# def main():
-#     root = tk.Tk()
-
-#     try:
-#         from ctypes import windll
-#         windll.shcore.SetProcessDpiAwareness(1)
-#     except Exception:
-#         pass
-
-#     app = ERPDesktopApp(root)
-#     root.mainloop()
-
 def main():
     root = tk.Tk()
 
@@ -342,10 +330,6 @@ def main():
 
     app = ERPDesktopApp(root)
     root.mainloop()
-
-
-# if __name__ == "__main__":
-#     main()
 
 
 if __name__ == "__main__":
