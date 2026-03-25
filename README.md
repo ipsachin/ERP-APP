@@ -250,7 +250,136 @@ At the moment:
 - document attachment bytes can also be stored in PostgreSQL
 - the desktop app can run directly against PostgreSQL
 
-For a production rollout, a backend API is still recommended so the desktop app does not connect to the database directly.
+For a production rollout, the API-backed path is preferred so the desktop app does not connect to the database directly.
+
+## API scaffold
+
+This repository now includes a FastAPI backend scaffold under [backend/](./backend).
+
+Current purpose:
+
+- let development start using the future production-style architecture early
+- centralize PostgreSQL access in one service layer
+- establish API routes for core ERP resources before the desktop app is switched over
+
+Current status:
+
+- the API is scaffolded and runnable
+- the desktop app can now use it through `ERP_DATA_BACKEND=api`
+- direct PostgreSQL mode still exists for debugging and migration work
+
+### Environment
+
+The API uses the same PostgreSQL connection settings from `.env` and also supports:
+
+```bash
+ERP_API_BASE_URL=http://127.0.0.1:8000
+ERP_API_HOST=127.0.0.1
+ERP_API_PORT=8000
+ERP_API_PREFIX=/api/v1
+```
+
+### Run the API locally
+
+Start the API with:
+
+```bash
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Or use the values from `.env.example`:
+
+```bash
+uvicorn backend.main:app --reload --host "$ERP_API_HOST" --port "$ERP_API_PORT"
+```
+
+Once running, open:
+
+- `http://127.0.0.1:8000/docs`
+- `http://127.0.0.1:8000/redoc`
+
+### Run the desktop app through the API
+
+Set these in `.env`:
+
+```bash
+ERP_DATA_BACKEND=api
+ERP_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Then:
+
+1. Start the API
+2. Start the desktop app with `python main.py`
+
+Expected behavior in API mode:
+
+- the window title shows `[API]`
+- the status bar shows an API connection label
+- the workbook create/open buttons are disabled
+- data reads and writes go through HTTP to the FastAPI service
+
+### Test the API health endpoint
+
+Run:
+
+```bash
+python scripts/test_api_health.py
+```
+
+This calls:
+
+```text
+/api/v1/health
+```
+
+and confirms that the API can reach PostgreSQL.
+
+### Current API routes
+
+The scaffold currently includes:
+
+- `/api/v1/health`
+- `/api/v1/modules`
+- `/api/v1/modules/{module_code}`
+- `/api/v1/modules/{module_code}/tasks`
+- `/api/v1/modules/{module_code}/components`
+- `/api/v1/modules/{module_code}/documents`
+- `/api/v1/products`
+- `/api/v1/products/{product_code}`
+- `/api/v1/products/{product_code}/modules`
+- `/api/v1/products/{product_code}/documents`
+- `/api/v1/products/{product_code}/workorders`
+- `/api/v1/projects`
+- `/api/v1/projects/{project_code}`
+- `/api/v1/projects/{project_code}/modules`
+- `/api/v1/projects/{project_code}/tasks`
+- `/api/v1/projects/{project_code}/documents`
+- `/api/v1/projects/{project_code}/completed-jobs`
+- `/api/v1/attachments/{sheet_name}/{record_id}`
+- `/api/v1/repository/{sheet_name}/records`
+- `/api/v1/repository/{sheet_name}/record`
+- `/api/v1/repository/{sheet_name}/append`
+- `/api/v1/repository/{sheet_name}/upsert`
+- `/api/v1/repository/{sheet_name}/clear`
+- `/api/v1/repository/{sheet_name}/rewrite`
+
+The attachment route streams document bytes from PostgreSQL blob storage.
+The repository routes are the bridge used by `ApiRepository` in the desktop app.
+
+### Recommended next step
+
+The next architectural step is to expand the API away from generic repository-style endpoints and toward business-level endpoints for modules, products, projects, scheduling, reporting, and auth.
+
+That would move the app from:
+
+- desktop app -> generic repository API
+
+to:
+
+- desktop app -> domain API -> PostgreSQL
+
+which is the same shape you would want in production.
 
 ## Main packaging files
 
