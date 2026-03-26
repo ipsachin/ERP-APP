@@ -618,6 +618,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 from urllib.parse import urlencode
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from openpyxl import Workbook, load_workbook
@@ -1286,7 +1287,7 @@ class PostgresRepository:
         return True
 
     def require_workbook_path(self) -> str:
-        raise ValueError("Workbook paths are not used in PostgreSQL mode.")
+        raise ValueError("Workbook paths are not used in remote data mode.")
 
     def ensure_ready(self) -> None:
         load_project_env()
@@ -1743,23 +1744,32 @@ class PostgresRepository:
 
 class ApiRepository:
     """
-    Repository implementation backed by the FastAPI service.
+    Repository implementation backed directly by PostgREST.
 
-    It mirrors the Excel/Postgres repository surface and uses the API
-    even in development so the desktop architecture matches production.
+    It preserves the repository surface expected by the desktop app
+    while translating operations into PostgREST table requests.
     """
 
     backend_name = "api"
 
     def __init__(self):
         load_project_env()
-        self.base_url = os.getenv("ERP_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-        self.api_prefix = os.getenv("ERP_API_PREFIX", "/api/v1").strip() or "/api/v1"
+        self.base_url = os.getenv("ERP_API_BASE_URL", "http://127.0.0.1:3000").rstrip("/")
+        self.api_prefix = os.getenv("ERP_API_PREFIX", "").strip()
         self._sheet_cache: Dict[str, List[Dict[str, Any]]] = {}
 
     @property
     def connection_label(self) -> str:
-        return f"API ({self.base_url}{self.api_prefix})"
+        return f"PostgREST ({self.base_url}{self.api_prefix})"
+
+    def get_table_name(self, sheet_name: str) -> str:
+        table_name = SHEET_TABLE_NAMES.get(sheet_name)
+        if not table_name:
+            raise ValueError(f"Unknown sheet name: {sheet_name}")
+        return table_name
+
+    def get_column_names(self, sheet_name: str) -> List[str]:
+        return [header_to_column_name(header) for header in self.get_sheet_headers(sheet_name)]
 
     def _api_url(self, path: str, query: Optional[Dict[str, Any]] = None) -> str:
         base = f"{self.base_url}{self.api_prefix}{path}"
@@ -1770,29 +1780,124 @@ class ApiRepository:
             return base
         return f"{base}?{urlencode(filtered, doseq=True)}"
 
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: Any = None,
+        query: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: int = 30,
+    ) -> tuple[Any, Any]:
+        data = None
+        request_headers = {"Accept": "application/json"}
+        if headers:
+            request_headers.update(headers)
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            request_headers["Content-Type"] = "application/json"
+        request = Request(self._api_url(path, query), data=data, headers=request_headers, method=method)
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                raw = response.read()
+                response_headers = response.headers
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace").strip()
+            if detail:
+                raise RuntimeError(f"{method} {self._api_url(path, query)} failed: HTTP {exc.code} {detail}") from exc
+            raise RuntimeError(f"{method} {self._api_url(path, query)} failed: HTTP {exc.code}") from exc
+        if not raw:
+            return None, response_headers
+        return json.loads(raw.decode("utf-8")), response_headers
+
     def _request_json(
         self,
         method: str,
         path: str,
         payload: Any = None,
         query: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: int = 30,
     ) -> Any:
-        data = None
-        headers = {"Accept": "application/json"}
-        if payload is not None:
-            data = json.dumps(payload).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        request = Request(self._api_url(path, query), data=data, headers=headers, method=method)
-        with urlopen(request, timeout=30) as response:
-            raw = response.read()
-        if not raw:
-            return None
-        return json.loads(raw.decode("utf-8"))
+        payload_data, _ = self._request(method, path, payload=payload, query=query, headers=headers, timeout=timeout)
+        return payload_data
 
-    def _request_bytes(self, method: str, path: str) -> tuple[bytes, Any]:
-        request = Request(self._api_url(path), headers={"Accept": "*/*"}, method=method)
-        with urlopen(request, timeout=60) as response:
-            return response.read(), response.headers
+    def _request_single_json(
+        self,
+        method: str,
+        path: str,
+        payload: Any = None,
+        query: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        request_headers = {
+            "Accept": "application/vnd.pgrst.object+json",
+        }
+        if headers:
+            request_headers.update(headers)
+        try:
+            return self._request_json(method, path, payload=payload, query=query, headers=request_headers)
+        except RuntimeError as exc:
+            if "HTTP 406" in str(exc) or "HTTP 404" in str(exc):
+                return None
+            raise
+
+    def _build_select(self, sheet_name: str) -> str:
+        headers = self.get_sheet_headers(sheet_name)
+        columns = self.get_column_names(sheet_name)
+        return ",".join(f"{header}:{column}" for header, column in zip(headers, columns))
+
+    def _blob_select(self) -> str:
+        return ",".join(
+            [
+                "sheet_name",
+                "record_id",
+                "file_name",
+                "original_path",
+                "content_type",
+                "file_data",
+                "file_size",
+                "created_on",
+                "updated_on",
+            ]
+        )
+
+    def _encode_filter_value(self, value: Any) -> str:
+        if value is None or value == "":
+            return "is.null"
+        return f"eq.{value}"
+
+    def _map_row_to_payload(self, sheet_name: str, row_dict: Dict[str, Any]) -> Dict[str, Any]:
+        headers = self.get_sheet_headers(sheet_name)
+        columns = self.get_column_names(sheet_name)
+        payload: Dict[str, Any] = {}
+        for header, column in zip(headers, columns):
+            if header in row_dict:
+                payload[column] = row_dict.get(header)
+        return payload
+
+    def _decode_bytea(self, value: Any) -> bytes:
+        if value in (None, ""):
+            return b""
+        if isinstance(value, bytes):
+            return value
+        text = str(value)
+        if text.startswith("\\x"):
+            return bytes.fromhex(text[2:])
+        return text.encode("utf-8")
+
+    def _fetch_table_rows(self, sheet_name: str, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        table_name = self.get_table_name(sheet_name)
+        _, primary_key_column = self.get_primary_key(sheet_name)
+        query = {
+            "select": self._build_select(sheet_name),
+            "order": primary_key_column,
+        }
+        if filters:
+            for header, value in filters.items():
+                query[header_to_column_name(header)] = self._encode_filter_value(value)
+        rows = self._request_json("GET", f"/{table_name}", query=query)
+        return rows or []
 
     def invalidate_sheet_cache(self, sheet_name: Optional[str] = None) -> None:
         if sheet_name is None:
@@ -1810,7 +1915,7 @@ class ApiRepository:
         return True
 
     def require_workbook_path(self) -> str:
-        raise ValueError("Workbook paths are not used in API mode.")
+        raise ValueError("Workbook paths are not used in online mode.")
 
     def ensure_ready(self) -> None:
         load_project_env()
@@ -1839,7 +1944,7 @@ class ApiRepository:
 
     def list_dicts(self, sheet_name: str) -> List[Dict[str, Any]]:
         if sheet_name not in self._sheet_cache:
-            rows = self._request_json("GET", f"/repository/{sheet_name}/records")
+            rows = self._fetch_table_rows(sheet_name)
             self._sheet_cache[sheet_name] = rows or []
         return [dict(row) for row in self._sheet_cache[sheet_name]]
 
@@ -1868,14 +1973,16 @@ class ApiRepository:
         return self.list_dicts(sheet_name)
 
     def find_row_by_key_name(self, sheet_name: str, key_name: str, key_value: Any) -> Optional[Dict[str, Any]]:
-        try:
-            return self._request_json(
-                "GET",
-                f"/repository/{sheet_name}/record",
-                query={"key_name": key_name, "key_value": key_value},
-            )
-        except Exception:
-            return None
+        table_name = self.get_table_name(sheet_name)
+        row = self._request_single_json(
+            "GET",
+            f"/{table_name}",
+            query={
+                "select": self._build_select(sheet_name),
+                header_to_column_name(key_name): self._encode_filter_value(key_value),
+            },
+        )
+        return row
 
     def find_row_index(self, sheet_name: str, key_col_idx: int, key_value: Any) -> Optional[int]:
         for idx, row in enumerate(self.list_rows(sheet_name), start=2):
@@ -1892,7 +1999,9 @@ class ApiRepository:
         self.append_dict(sheet_name, row)
 
     def append_dict(self, sheet_name: str, row_dict: Dict[str, Any]) -> None:
-        self._request_json("POST", f"/repository/{sheet_name}/append", payload=row_dict)
+        table_name = self.get_table_name(sheet_name)
+        payload = self._map_row_to_payload(sheet_name, row_dict)
+        self._request_json("POST", f"/{table_name}", payload=payload, headers={"Prefer": "return=minimal"})
         self.invalidate_sheet_cache(sheet_name)
 
     def update_row_by_key(self, sheet_name: str, key_col_idx: int, key_value: Any, updates: Dict[int, Any]) -> bool:
@@ -1901,22 +2010,24 @@ class ApiRepository:
         key_name = headers[key_col_idx]
         result = self._request_json(
             "PATCH",
-            f"/repository/{sheet_name}/record",
-            payload=payload,
-            query={"key_name": key_name, "key_value": key_value},
+            f"/{self.get_table_name(sheet_name)}",
+            payload=self._map_row_to_payload(sheet_name, payload),
+            query={header_to_column_name(key_name): self._encode_filter_value(key_value)},
+            headers={"Prefer": "return=representation"},
         )
         self.invalidate_sheet_cache(sheet_name)
-        return bool(result and result.get("updated"))
+        return bool(result)
 
     def update_row_by_key_name(self, sheet_name: str, key_name: str, key_value: Any, updates: Dict[str, Any]) -> bool:
         result = self._request_json(
             "PATCH",
-            f"/repository/{sheet_name}/record",
-            payload=updates,
-            query={"key_name": key_name, "key_value": key_value},
+            f"/{self.get_table_name(sheet_name)}",
+            payload=self._map_row_to_payload(sheet_name, updates),
+            query={header_to_column_name(key_name): self._encode_filter_value(key_value)},
+            headers={"Prefer": "return=representation"},
         )
         self.invalidate_sheet_cache(sheet_name)
-        return bool(result and result.get("updated"))
+        return bool(result)
 
     def replace_full_row_by_key(self, sheet_name: str, key_col_idx: int, key_value: Any, new_row: Sequence[Any]) -> bool:
         headers = self.get_sheet_headers(sheet_name)
@@ -1934,14 +2045,19 @@ class ApiRepository:
         return self.upsert_dict(sheet_name, key_name, row)
 
     def upsert_dict(self, sheet_name: str, key_name: str, row_dict: Dict[str, Any]) -> str:
-        result = self._request_json(
+        key_value = row_dict.get(key_name)
+        existed = self.find_row_by_key_name(sheet_name, key_name, key_value) is not None
+        self._request_json(
             "POST",
-            f"/repository/{sheet_name}/upsert",
-            payload=row_dict,
-            query={"key_name": key_name},
+            f"/{self.get_table_name(sheet_name)}",
+            payload=self._map_row_to_payload(sheet_name, row_dict),
+            query={"on_conflict": header_to_column_name(key_name)},
+            headers={
+                "Prefer": "resolution=merge-duplicates,return=representation",
+            },
         )
         self.invalidate_sheet_cache(sheet_name)
-        return result.get("status", "updated")
+        return "updated" if existed else "inserted"
 
     def delete_row_by_key(self, sheet_name: str, key_col_idx: int, key_value: Any) -> bool:
         key_name = self.get_sheet_headers(sheet_name)[key_col_idx]
@@ -1950,11 +2066,12 @@ class ApiRepository:
     def delete_row_by_key_name(self, sheet_name: str, key_name: str, key_value: Any) -> bool:
         result = self._request_json(
             "DELETE",
-            f"/repository/{sheet_name}/record",
-            query={"key_name": key_name, "key_value": key_value},
+            f"/{self.get_table_name(sheet_name)}",
+            query={header_to_column_name(key_name): self._encode_filter_value(key_value)},
+            headers={"Prefer": "return=representation"},
         )
         self.invalidate_sheet_cache(sheet_name)
-        return bool(result and result.get("deleted"))
+        return bool(result)
 
     def delete_rows_where(self, sheet_name: str, predicate: Callable[[Dict[str, Any]], bool]) -> int:
         rows = self.filter_dicts(sheet_name, predicate)
@@ -1968,14 +2085,20 @@ class ApiRepository:
         return deleted
 
     def clear_sheet_data(self, sheet_name: str) -> None:
-        self._request_json("POST", f"/repository/{sheet_name}/clear")
+        self._request_json(
+            "DELETE",
+            f"/{self.get_table_name(sheet_name)}",
+            query={self.get_primary_key(sheet_name)[1]: "not.is.null"},
+            headers={"Prefer": "return=minimal"},
+        )
         self.invalidate_sheet_cache(sheet_name)
 
     def rewrite_sheet_data(self, sheet_name: str, rows: List[Sequence[Any]]) -> None:
         headers = self.get_sheet_headers(sheet_name)
         payload = [{header: value for header, value in zip(headers, list(row)[:len(headers)])} for row in rows]
-        self._request_json("POST", f"/repository/{sheet_name}/rewrite", payload=payload)
-        self.invalidate_sheet_cache(sheet_name)
+        self.clear_sheet_data(sheet_name)
+        for row in payload:
+            self.append_dict(sheet_name, row)
 
     def reorder_rows_by_field(
         self,
@@ -2037,28 +2160,47 @@ class ApiRepository:
     ) -> str:
         src = Path(source_file_path)
         content_type = mimetypes.guess_type(src.name)[0] or "application/octet-stream"
+        data = src.read_bytes()
         payload = {
+            "sheet_name": sheet_name,
+            "record_id": record_id,
             "file_name": file_name,
             "original_path": str(src),
             "content_type": content_type,
-            "content_base64": base64.b64encode(src.read_bytes()).decode("ascii"),
-            "created_on": created_on,
-            "updated_on": updated_on,
+            "file_data": "\\x" + data.hex(),
+            "file_size": len(data),
+            "created_on": created_on or updated_on or now_str(),
+            "updated_on": updated_on or created_on or now_str(),
         }
-        result = self._request_json("PUT", f"/attachments/{sheet_name}/{record_id}", payload=payload)
-        return result["file_path"]
+        self._request_json(
+            "POST",
+            "/document_blobs",
+            payload=payload,
+            query={"on_conflict": "sheet_name,record_id"},
+            headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+        )
+        return f"db://{sheet_name}/{record_id}/{safe_name(file_name)}"
 
     def get_document_blob(self, sheet_name: str, record_id: str) -> Optional[Dict[str, Any]]:
-        try:
-            data, headers = self._request_bytes("GET", f"/attachments/{sheet_name}/{record_id}")
-        except Exception:
+        row = self._request_single_json(
+            "GET",
+            "/document_blobs",
+            query={
+                "select": self._blob_select(),
+                "sheet_name": self._encode_filter_value(sheet_name),
+                "record_id": self._encode_filter_value(record_id),
+            },
+        )
+        if row is None:
             return None
-        file_name = headers.get_filename() or f"{record_id}.bin"
         return {
-            "file_name": file_name,
-            "content_type": headers.get_content_type(),
-            "file_data": data,
-            "file_size": len(data),
+            "file_name": row.get("file_name") or f"{record_id}.bin",
+            "original_path": row.get("original_path") or "",
+            "content_type": row.get("content_type") or "application/octet-stream",
+            "file_data": self._decode_bytea(row.get("file_data")),
+            "file_size": row.get("file_size") or 0,
+            "created_on": row.get("created_on") or "",
+            "updated_on": row.get("updated_on") or "",
         }
 
     def materialize_document_blob(self, sheet_name: str, record_id: str, fallback_path: str = "") -> Path:
@@ -2076,7 +2218,15 @@ class ApiRepository:
         return target
 
     def delete_document_blob(self, sheet_name: str, record_id: str) -> None:
-        self._request_json("DELETE", f"/attachments/{sheet_name}/{record_id}")
+        self._request_json(
+            "DELETE",
+            "/document_blobs",
+            query={
+                "sheet_name": self._encode_filter_value(sheet_name),
+                "record_id": self._encode_filter_value(record_id),
+            },
+            headers={"Prefer": "return=minimal"},
+        )
 
 
 # ============================================================
@@ -2095,50 +2245,46 @@ class WorkbookManager:
 
     def __init__(self, backend: Optional[str] = None):
         load_project_env()
-        selected_backend = norm_text(backend or os.getenv("ERP_DATA_BACKEND") or "excel").lower()
-        if selected_backend == "api":
+        selected_backend = norm_text(backend or os.getenv("ERP_DATA_BACKEND") or "local").lower()
+        if selected_backend == "online":
             self.repo = ApiRepository()
-            self.backend_name = "api"
-        elif selected_backend == "postgres":
-            self.repo = PostgresRepository()
-            self.backend_name = "postgres"
-        else:
+            self.backend_name = "online"
+        elif selected_backend == "local":
             self.repo = ExcelRepository()
-            self.backend_name = "excel"
+            self.backend_name = "local"
+        else:
+            raise ValueError("ERP_DATA_BACKEND must be either 'online' or 'local'.")
 
     @property
     def workbook_path(self) -> Optional[str]:
-        if not self.uses_excel():
+        if not self.uses_local():
             return self.repo.connection_label
         return self.repo.workbook_path
 
-    def uses_postgres(self) -> bool:
-        return self.backend_name == "postgres"
+    def uses_online(self) -> bool:
+        return self.backend_name == "online"
 
-    def uses_api(self) -> bool:
-        return self.backend_name == "api"
-
-    def uses_excel(self) -> bool:
-        return self.backend_name == "excel"
+    def uses_local(self) -> bool:
+        return self.backend_name == "local"
 
     def set_workbook_path(self, path: str) -> None:
-        if not self.uses_excel():
-            raise ValueError("Workbook paths are only used in Excel mode.")
+        if not self.uses_local():
+            raise ValueError("Workbook paths are only used in local mode.")
         self.repo.set_workbook_path(path)
 
     def has_workbook(self) -> bool:
         return self.repo.has_workbook()
 
     def create_workbook(self, path: str) -> None:
-        if not self.uses_excel():
-            raise ValueError("Workbook creation is only available in Excel mode.")
+        if not self.uses_local():
+            raise ValueError("Workbook creation is only available in local mode.")
         AppConfig.ensure_directories()
         WorkbookSchema.create_new_workbook(path)
         self.repo.set_workbook_path(path)
 
     def open_workbook(self, path: str) -> None:
-        if not self.uses_excel():
-            raise ValueError("Workbook selection is only available in Excel mode.")
+        if not self.uses_local():
+            raise ValueError("Workbook selection is only available in local mode.")
         AppConfig.ensure_directories()
         WorkbookSchema.ensure_workbook_structure(path)
         self.repo.set_workbook_path(path)

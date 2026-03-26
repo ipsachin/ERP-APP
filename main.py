@@ -38,12 +38,10 @@ class ERPDesktopApp:
         self.workbook_manager = WorkbookManager()
         self.repo = self.workbook_manager.repo
 
-        if self.workbook_manager.uses_api():
-            backend_suffix = "API"
-        elif self.workbook_manager.uses_postgres():
-            backend_suffix = "PostgreSQL"
+        if self.workbook_manager.uses_online():
+            backend_suffix = "Online"
         else:
-            backend_suffix = "Excel"
+            backend_suffix = "Local"
         self.root.title(f"{AppConfig.APP_TITLE} v{AppConfig.APP_VERSION} [{backend_suffix}]")
         self.root.geometry(f"{AppConfig.WINDOW_WIDTH}x{AppConfig.WINDOW_HEIGHT}")
         self.root.minsize(AppConfig.MIN_WIDTH, AppConfig.MIN_HEIGHT)
@@ -70,7 +68,7 @@ class ERPDesktopApp:
         # ----------------------------------------------------
         initial_status = (
             f"Connected to {self.workbook_manager.workbook_path}"
-            if not self.workbook_manager.uses_excel()
+            if not self.workbook_manager.uses_local()
             else "Ready. Create or open a workbook to begin."
         )
         self.status_var = tk.StringVar(value=initial_status)

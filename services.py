@@ -576,7 +576,7 @@ class ModuleService(BaseService):
         ts = now_str()
 
         target_path = src
-        if getattr(self.repo, "backend_name", "excel") == "postgres":
+        if getattr(self.repo, "backend_name", "local") != "local":
             target_path = self.repo.save_document_blob(
                 AppConfig.SHEET_DOCUMENTS,
                 doc_id,
@@ -615,7 +615,7 @@ class ModuleService(BaseService):
 
     def delete_document(self, doc_id: str, delete_file: bool = False) -> bool:
         row = self.repo.find_row(AppConfig.SHEET_DOCUMENTS, 0, doc_id)
-        if getattr(self.repo, "backend_name", "excel") == "postgres":
+        if getattr(self.repo, "backend_name", "local") != "local":
             self.repo.delete_document_blob(AppConfig.SHEET_DOCUMENTS, doc_id)
         elif row and delete_file:
             fp = Path(norm_text(row[6]))
@@ -627,7 +627,7 @@ class ModuleService(BaseService):
         return self.repo.delete_row_by_key_name(AppConfig.SHEET_DOCUMENTS, "DocID", doc_id)
 
     def resolve_document_open_path(self, doc_id: str, file_path: str) -> str:
-        if getattr(self.repo, "backend_name", "excel") != "postgres":
+        if getattr(self.repo, "backend_name", "local") == "local":
             return file_path
         return str(self.repo.materialize_document_blob(AppConfig.SHEET_DOCUMENTS, doc_id, file_path))
 
@@ -1022,7 +1022,7 @@ class ProductService(BaseService):
         ts = now_str()
 
         target_path = src
-        if getattr(self.repo, "backend_name", "excel") == "postgres":
+        if getattr(self.repo, "backend_name", "local") != "local":
             target_path = self.repo.save_document_blob(
                 AppConfig.SHEET_PRODUCT_DOCUMENTS,
                 doc_id,
@@ -1060,7 +1060,7 @@ class ProductService(BaseService):
 
     def delete_product_document(self, prod_doc_id: str, delete_file: bool = False) -> bool:
         row = self.repo.find_row(AppConfig.SHEET_PRODUCT_DOCUMENTS, 0, prod_doc_id)
-        if getattr(self.repo, "backend_name", "excel") == "postgres":
+        if getattr(self.repo, "backend_name", "local") != "local":
             self.repo.delete_document_blob(AppConfig.SHEET_PRODUCT_DOCUMENTS, prod_doc_id)
         elif row and delete_file:
             fp = Path(norm_text(row[5]))
@@ -1072,7 +1072,7 @@ class ProductService(BaseService):
         return self.repo.delete_row_by_key_name(AppConfig.SHEET_PRODUCT_DOCUMENTS, "ProdDocID", prod_doc_id)
 
     def resolve_product_document_open_path(self, prod_doc_id: str, file_path: str) -> str:
-        if getattr(self.repo, "backend_name", "excel") != "postgres":
+        if getattr(self.repo, "backend_name", "local") == "local":
             return file_path
         return str(self.repo.materialize_document_blob(AppConfig.SHEET_PRODUCT_DOCUMENTS, prod_doc_id, file_path))
 
@@ -1796,7 +1796,7 @@ class ProjectService(BaseService):
         ts = now_str()
 
         target_path = src
-        if getattr(self.repo, "backend_name", "excel") == "postgres":
+        if getattr(self.repo, "backend_name", "local") != "local":
             target_path = self.repo.save_document_blob(
                 AppConfig.SHEET_PROJECT_DOCUMENTS,
                 doc_id,
@@ -1854,7 +1854,7 @@ class ProjectService(BaseService):
 
     def delete_project_document(self, project_doc_id: str, delete_file: bool = False) -> bool:
         row = self.repo.find_row(AppConfig.SHEET_PROJECT_DOCUMENTS, 0, project_doc_id)
-        if getattr(self.repo, "backend_name", "excel") == "postgres":
+        if getattr(self.repo, "backend_name", "local") != "local":
             self.repo.delete_document_blob(AppConfig.SHEET_PROJECT_DOCUMENTS, project_doc_id)
         elif row and delete_file:
             fp = Path(norm_text(row[5]))
@@ -1866,7 +1866,7 @@ class ProjectService(BaseService):
         return self.repo.delete_row_by_key_name(AppConfig.SHEET_PROJECT_DOCUMENTS, "ProjectDocID", project_doc_id)
 
     def resolve_project_document_open_path(self, project_doc_id: str, file_path: str) -> str:
-        if getattr(self.repo, "backend_name", "excel") != "postgres":
+        if getattr(self.repo, "backend_name", "local") == "local":
             return file_path
         return str(self.repo.materialize_document_blob(AppConfig.SHEET_PROJECT_DOCUMENTS, project_doc_id, file_path))
 
@@ -2117,7 +2117,7 @@ class ProjectService(BaseService):
         return rows
 
     def _ensure_completed_job_sheets(self) -> None:
-        if getattr(self.repo, "backend_name", "excel") == "excel":
+        if getattr(self.repo, "backend_name", "local") == "local":
             workbook_path = self.repo.require_workbook_path()
             WorkbookSchema.ensure_workbook_structure(workbook_path)
         self.repo.reload_cache()

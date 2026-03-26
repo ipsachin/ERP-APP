@@ -17,20 +17,21 @@ from db_config import load_project_env
 
 def main() -> int:
     env_path = load_project_env()
-    base_url = os.getenv("ERP_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-    health_url = f"{base_url}/api/v1/health"
+    base_url = os.getenv("ERP_API_BASE_URL", "http://127.0.0.1:3000").rstrip("/")
+    api_prefix = os.getenv("ERP_API_PREFIX", "").strip()
+    health_url = f"{base_url}{api_prefix}/"
 
     print(f"Loaded environment from: {env_path}")
-    print(f"Checking API health: {health_url}")
+    print(f"Checking PostgREST root: {health_url}")
 
     try:
         with urlopen(health_url, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except URLError as exc:
-        print(f"API health check failed: {exc}")
+        print(f"PostgREST health check failed: {exc}")
         return 1
 
-    print("API health check succeeded.")
+    print("PostgREST health check succeeded.")
     print(json.dumps(payload, indent=2))
     return 0
 

@@ -51,7 +51,7 @@ cp .env.example .env
 Fill in the PostgreSQL values in `.env`:
 
 ```bash
-ERP_DATA_BACKEND=postgres
+ERP_DATA_BACKEND=online
 PGHOST=your-digitalocean-host
 PGPORT=25060
 PGDATABASE=defaultdb
@@ -66,8 +66,8 @@ ERP_WORKBOOK_PATH=workspace/data/YourWorkbook.xlsx
 Important:
 
 - `PGSSLROOTCERT` should point to the CA certificate downloaded from DigitalOcean
-- `ERP_DATA_BACKEND=postgres` makes the desktop app use PostgreSQL instead of Excel
-- `ERP_WORKBOOK_PATH` should point to the workbook you want to import
+- `ERP_DATA_BACKEND=online` makes the desktop app use the deployed PostgREST service
+- `ERP_WORKBOOK_PATH` should point to the workbook you want to import during migration
 
 ### 2. Verify the secure database connection
 
@@ -205,7 +205,7 @@ For each document row, it:
 
 If a local file is missing, the script skips it and reports that path.
 
-### 7. Run the app against PostgreSQL
+### 7. Run the app in online mode
 
 Once the schema, workbook rows, and attachments have been migrated, start the app:
 
@@ -213,10 +213,10 @@ Once the schema, workbook rows, and attachments have been migrated, start the ap
 python main.py
 ```
 
-When `.env` contains `ERP_DATA_BACKEND=postgres`, the app should:
+When `.env` contains `ERP_DATA_BACKEND=online`, the app should:
 
-- show `[PostgreSQL]` in the window title
-- show a PostgreSQL connection label on the home page
+- show `[Online]` in the window title
+- show a PostgREST connection label on the home page
 - disable the `Create Workbook` and `Open Workbook` buttons
 
 ### 8. Verify record types and attachments
@@ -226,8 +226,8 @@ Recommended checks after migration:
 1. Open assemblies and confirm modules, tasks, components, and module documents load.
 2. Open products and confirm product modules, product documents, and work orders load.
 3. Open live orders and confirm project modules, project tasks, project documents, and completed jobs load.
-4. Open a migrated document attachment and confirm it opens from PostgreSQL-backed temp storage.
-5. Add a new document in PostgreSQL mode and confirm it can be opened again after refresh.
+4. Open a migrated document attachment and confirm it opens from remote temp storage.
+5. Add a new document in online mode and confirm it can be opened again after refresh.
 
 ### Scripts involved in the migration
 
@@ -242,84 +242,66 @@ Recommended checks after migration:
 
 ### Current scope
 
-This PostgreSQL support is suitable for development and internal testing.
+This PostgreSQL-backed deployment path is suitable for development and internal testing.
 
 At the moment:
 
 - structured records can be stored in PostgreSQL
 - document attachment bytes can also be stored in PostgreSQL
-- the desktop app can run directly against PostgreSQL
+- the desktop app can run in `online` mode through PostgREST or `local` mode with a workbook
 
 For a production rollout, the API-backed path is preferred so the desktop app does not connect to the database directly.
 
-## API scaffold
+## App modes
 
-This repository now includes a FastAPI backend scaffold under [backend/](./backend).
+The desktop app now has two primary runtime modes:
 
-Current purpose:
-
-- let development start using the future production-style architecture early
-- centralize PostgreSQL access in one service layer
-- establish API routes for core ERP resources before the desktop app is switched over
+- `online`: use a PostgREST service over HTTP
+- `local`: use a local workbook file
 
 Current status:
 
-- the API is scaffolded and runnable
-- the desktop app can now use it through `ERP_DATA_BACKEND=api`
-- direct PostgreSQL mode still exists for debugging and migration work
+- `ERP_DATA_BACKEND=online` means "use PostgREST over HTTP"
+- `ERP_DATA_BACKEND=local` means "use a local workbook file"
+- direct PostgreSQL is no longer a desktop runtime mode
+- the legacy `backend/` scaffold is no longer required by the desktop runtime
 
 ### Environment
 
-The API uses the same PostgreSQL connection settings from `.env` and also supports:
+Point the desktop app at your PostgREST service:
 
 ```bash
-ERP_API_BASE_URL=http://127.0.0.1:8000
-ERP_API_HOST=127.0.0.1
-ERP_API_PORT=8000
-ERP_API_PREFIX=/api/v1
+ERP_DATA_BACKEND=online
+ERP_API_BASE_URL=http://127.0.0.1:3000
+ERP_API_PREFIX=
 ```
 
-### Run the API locally
+For your DigitalOcean deployment, `ERP_API_BASE_URL` should be the public App Platform URL of the PostgREST service.
 
-Start the API with:
-
-```bash
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Or use the values from `.env.example`:
-
-```bash
-uvicorn backend.main:app --reload --host "$ERP_API_HOST" --port "$ERP_API_PORT"
-```
-
-Once running, open:
-
-- `http://127.0.0.1:8000/docs`
-- `http://127.0.0.1:8000/redoc`
-
-### Run the desktop app through the API
+### Run the desktop app through PostgREST
 
 Set these in `.env`:
 
 ```bash
-ERP_DATA_BACKEND=api
-ERP_API_BASE_URL=http://127.0.0.1:8000
+ERP_DATA_BACKEND=online
+ERP_API_BASE_URL=https://your-postgrest-service.ondigitalocean.app
+ERP_API_PREFIX=
 ```
 
-Then:
+Then start the desktop app with:
 
-1. Start the API
-2. Start the desktop app with `python main.py`
+```bash
+python main.py
+```
 
-Expected behavior in API mode:
+Expected behavior in online mode:
 
-- the window title shows `[API]`
-- the status bar shows an API connection label
+- the window title shows `[Online]`
+- the status bar shows a PostgREST connection label
 - the workbook create/open buttons are disabled
-- data reads and writes go through HTTP to the FastAPI service
+- data reads and writes go through HTTP to PostgREST
 
-### Test the API health endpoint
+### Test the PostgREST connection
 
 Run:
 
@@ -327,57 +309,20 @@ Run:
 python scripts/test_api_health.py
 ```
 
-This calls:
+This calls the PostgREST root endpoint and confirms the service is reachable.
 
-```text
-/api/v1/health
-```
+### How the desktop app maps to PostgREST
 
-and confirms that the API can reach PostgreSQL.
+The repository adapter in `storage.py` translates the app's sheet-based operations into PostgREST table calls.
 
-### Current API routes
+Examples:
 
-The scaffold currently includes:
+- `Modules` -> `modules`
+- `Products` -> `products`
+- `Projects` -> `projects`
+- `ProductDocuments` -> `product_documents`
 
-- `/api/v1/health`
-- `/api/v1/modules`
-- `/api/v1/modules/{module_code}`
-- `/api/v1/modules/{module_code}/tasks`
-- `/api/v1/modules/{module_code}/components`
-- `/api/v1/modules/{module_code}/documents`
-- `/api/v1/products`
-- `/api/v1/products/{product_code}`
-- `/api/v1/products/{product_code}/modules`
-- `/api/v1/products/{product_code}/documents`
-- `/api/v1/products/{product_code}/workorders`
-- `/api/v1/projects`
-- `/api/v1/projects/{project_code}`
-- `/api/v1/projects/{project_code}/modules`
-- `/api/v1/projects/{project_code}/tasks`
-- `/api/v1/projects/{project_code}/documents`
-- `/api/v1/projects/{project_code}/completed-jobs`
-- `/api/v1/attachments/{sheet_name}/{record_id}`
-- `/api/v1/repository/{sheet_name}/records`
-- `/api/v1/repository/{sheet_name}/record`
-- `/api/v1/repository/{sheet_name}/append`
-- `/api/v1/repository/{sheet_name}/upsert`
-- `/api/v1/repository/{sheet_name}/clear`
-- `/api/v1/repository/{sheet_name}/rewrite`
-
-The attachment route streams document bytes from PostgreSQL blob storage.
-The repository routes are the bridge used by `ApiRepository` in the desktop app.
-
-### Recommended next step
-
-The next architectural step is to expand the API away from generic repository-style endpoints and toward business-level endpoints for modules, products, projects, scheduling, reporting, and auth.
-
-That would move the app from:
-
-- desktop app -> generic repository API
-
-to:
-
-- desktop app -> domain API -> PostgreSQL
+Attachment blobs are stored in the `document_blobs` table and are also read and written through PostgREST.
 
 which is the same shape you would want in production.
 

@@ -139,7 +139,7 @@ class HomePage(BasePage):
         ttk.Button(btn_row, text="Refresh Dashboard", command=self.refresh_page).pack(side="left", padx=4)
         ttk.Button(btn_row, text="Open Job Cards Board", command=lambda: self.show_page("jobcards")).pack(side="left", padx=4)
 
-        if not self.app.workbook_manager.uses_excel():
+        if not self.app.workbook_manager.uses_local():
             self.create_workbook_btn.state(["disabled"])
             self.open_workbook_btn.state(["disabled"])
 
@@ -598,7 +598,7 @@ class HomePage(BasePage):
 
     def refresh_page(self):
         path = self.app.workbook_manager.workbook_path
-        if not self.app.workbook_manager.uses_excel():
+        if not self.app.workbook_manager.uses_local():
             self.workbook_label.config(text=path or "Remote data source")
         else:
             self.workbook_label.config(text=path or "No workbook selected")
