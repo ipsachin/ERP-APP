@@ -1124,10 +1124,10 @@ from models import ComponentRecord
 
 
 def _erp_bind_filterable_combobox(combo, values_getter):
-    def _apply(event=None):
+    def _set_values(filter_text=""):
         try:
             all_values = [str(v) for v in values_getter()]
-            typed = combo.get().strip().lower()
+            typed = str(filter_text or "").strip().lower()
             if typed:
                 filtered = [v for v in all_values if typed in v.lower()]
             else:
@@ -1135,8 +1135,17 @@ def _erp_bind_filterable_combobox(combo, values_getter):
             combo["values"] = filtered
         except Exception:
             pass
+
+    def _apply(event=None):
+        _set_values(combo.get())
+
+    def _reset_dropdown(event=None):
+        _set_values("")
+
+    combo.configure(postcommand=_reset_dropdown)
     combo.bind("<KeyRelease>", _apply, add="+")
-    combo.bind("<Button-1>", _apply, add="+")
+    combo.bind("<Button-1>", _reset_dropdown, add="+")
+    combo.bind("<FocusIn>", _reset_dropdown, add="+")
     return combo
 
 
@@ -1923,6 +1932,10 @@ def _final_part_number_keyrelease(self, event=None):
     _final_filter_combobox_values(self, self.part_number_combo, vals, self.part_number_var.get())
 
 
+def _final_reset_part_combo(combo):
+    combo["values"] = list(getattr(combo, "_all_values", list(combo.cget("values"))))
+
+
 def _final_build_product_parts_card(self, parent):
     if not hasattr(self, 'part_name_var'):
         self.part_name_var = tk.StringVar()
@@ -1971,6 +1984,12 @@ def _final_build_product_parts_card(self, parent):
     self.part_number_combo.bind("<<ComboboxSelected>>", lambda e: _final_on_part_number_selected(self, e))
     self.part_name_combo.bind("<KeyRelease>", lambda e: _final_part_name_keyrelease(self, e))
     self.part_number_combo.bind("<KeyRelease>", lambda e: _final_part_number_keyrelease(self, e))
+    self.part_name_combo.configure(postcommand=lambda: _final_reset_part_combo(self.part_name_combo))
+    self.part_number_combo.configure(postcommand=lambda: _final_reset_part_combo(self.part_number_combo))
+    self.part_name_combo.bind("<Button-1>", lambda e: _final_reset_part_combo(self.part_name_combo), add="+")
+    self.part_number_combo.bind("<Button-1>", lambda e: _final_reset_part_combo(self.part_number_combo), add="+")
+    self.part_name_combo.bind("<FocusIn>", lambda e: _final_reset_part_combo(self.part_name_combo), add="+")
+    self.part_number_combo.bind("<FocusIn>", lambda e: _final_reset_part_combo(self.part_number_combo), add="+")
 
 
 def _final_refresh_page(self):

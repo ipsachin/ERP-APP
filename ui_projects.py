@@ -1863,15 +1863,24 @@ from datetime import datetime as _dt
 
 
 def _erp_bind_filterable_combobox(combo, values_getter):
-    def _apply(event=None):
+    def _set_values(filter_text=""):
         try:
             all_values = [str(v) for v in values_getter()]
-            typed = combo.get().strip().lower()
+            typed = str(filter_text or "").strip().lower()
             combo['values'] = [v for v in all_values if typed in v.lower()] if typed else all_values
         except Exception:
             pass
+
+    def _apply(event=None):
+        _set_values(combo.get())
+
+    def _reset_dropdown(event=None):
+        _set_values("")
+
+    combo.configure(postcommand=_reset_dropdown)
     combo.bind('<KeyRelease>', _apply, add='+')
-    combo.bind('<Button-1>', _apply, add='+')
+    combo.bind('<Button-1>', _reset_dropdown, add='+')
+    combo.bind('<FocusIn>', _reset_dropdown, add='+')
     return combo
 
 
