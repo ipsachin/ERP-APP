@@ -3,7 +3,20 @@
 # Central configuration for Liquimech ERP Desktop App
 # ============================================================
 
+import sys
 from pathlib import Path
+
+
+def get_bundle_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parent
+
+
+def get_app_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
 
 
 class AppConfig:
@@ -49,8 +62,9 @@ class AppConfig:
     # --------------------------------------------------------
     # Working folders
     # --------------------------------------------------------
-    ROOT_DIR = Path(__file__).resolve().parent
-    ASSETS_DIR = ROOT_DIR / "assets"
+    ROOT_DIR = get_app_dir()
+    BUNDLE_DIR = get_bundle_dir()
+    ASSETS_DIR = BUNDLE_DIR / "assets"
     WORKSPACE_DIR = ROOT_DIR / "workspace"
     DATA_DIR = WORKSPACE_DIR / "data"
     EXPORTS_DIR = WORKSPACE_DIR / "exports"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from importlib import import_module
 from pathlib import Path
 
@@ -22,15 +23,52 @@ except ImportError:
         return True
 
 
-ROOT_DIR = Path(__file__).resolve().parent
-DEFAULT_ENV_FILE = ROOT_DIR / ".env"
-DEFAULT_CA_CERT = ROOT_DIR / "certs" / "ca-certificate.crt"
+BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+DEFAULT_ENV_FILE = APP_DIR / ".env"
+DEFAULT_CA_CERT = BUNDLE_DIR / "certs" / "ca-certificate.crt"
+_last_loaded_env_path: Path | None = None
+
+
+def find_env_file() -> Path:
+    candidates = [
+        APP_DIR / ".env",
+        BUNDLE_DIR / ".env",
+        Path.cwd() / ".env",
+        APP_DIR / ".env.example",
+        BUNDLE_DIR / ".env.example",
+        Path.cwd() / ".env.example",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return DEFAULT_ENV_FILE
 
 
 def load_project_env(env_file: Path | None = None) -> Path:
-    env_path = env_file or DEFAULT_ENV_FILE
+    global _last_loaded_env_path
+    env_path = env_file or find_env_file()
     load_dotenv(env_path)
+    _last_loaded_env_path = env_path
     return env_path
+
+
+def resolve_config_path(value: str, default_path: Path) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return str(default_path)
+    path = Path(raw).expanduser()
+    if path.is_absolute():
+        return str(path)
+    relative_bases = []
+    if _last_loaded_env_path is not None:
+        relative_bases.append(_last_loaded_env_path.parent)
+    relative_bases.extend([APP_DIR, BUNDLE_DIR, Path.cwd()])
+    for base in relative_bases:
+        candidate = (base / path).resolve()
+        if candidate.exists():
+            return str(candidate)
+    return str((APP_DIR / path).resolve())
 
 
 def require_env(name: str) -> str:
@@ -41,7 +79,7 @@ def require_env(name: str) -> str:
 
 
 def get_database_settings() -> dict[str, str]:
-    sslrootcert = os.getenv("PGSSLROOTCERT", "").strip() or str(DEFAULT_CA_CERT)
+    sslrootcert = resolve_config_path(os.getenv("PGSSLROOTCERT", ""), DEFAULT_CA_CERT)
     return {
         "host": require_env("PGHOST"),
         "port": require_env("PGPORT"),

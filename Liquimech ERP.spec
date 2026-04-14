@@ -1,11 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
 
 
 runtime_datas = []
 runtime_binaries = []
 runtime_hiddenimports = []
+project_root = Path.cwd()
+app_datas = [
+    ('assets', 'assets'),
+    ('workspace/data', 'workspace/data'),
+    ('certs', 'certs'),
+]
+
+if (project_root / '.env').exists():
+    app_datas.append(('.env', '.'))
+elif (project_root / '.env.example').exists():
+    app_datas.append(('.env.example', '.'))
 
 for package_name in ('psycopg', 'dotenv', 'openpyxl', 'reportlab', 'PIL'):
     package_datas, package_binaries, package_hiddenimports = collect_all(package_name)
@@ -17,7 +30,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=runtime_binaries,
-    datas=[('assets', 'assets'), ('workspace/data', 'workspace/data'), *runtime_datas],
+    datas=[*app_datas, *runtime_datas],
     hiddenimports=runtime_hiddenimports,
     hookspath=[],
     hooksconfig={},
