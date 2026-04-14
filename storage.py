@@ -615,6 +615,7 @@ import json
 import mimetypes
 import os
 from contextlib import contextmanager
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 from urllib.parse import urlencode
@@ -623,16 +624,31 @@ from urllib.request import Request, urlopen
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
-from psycopg import sql
 
 from app_config import AppConfig
-from db_config import connect as connect_postgres
-from db_config import get_database_settings, load_project_env
 
 
 # ============================================================
 # Basic helpers
 # ============================================================
+
+def load_project_env(env_file: Path | None = None) -> Path:
+    db_config = import_module("db_config")
+    return db_config.load_project_env(env_file)
+
+
+def get_database_settings() -> dict[str, str]:
+    db_config = import_module("db_config")
+    return db_config.get_database_settings()
+
+
+def connect_postgres(**overrides):
+    db_config = import_module("db_config")
+    return db_config.connect(**overrides)
+
+
+def get_psycopg_sql():
+    return import_module("psycopg.sql")
 
 def now_str() -> str:
     from datetime import datetime
@@ -1357,6 +1373,7 @@ class PostgresRepository:
                 self.invalidate_sheet_cache()
 
     def _fetch_sheet_dicts(self, sheet_name: str) -> List[Dict[str, Any]]:
+        sql = get_psycopg_sql()
         table_name = self.get_table_name(sheet_name)
         headers = self.get_sheet_headers(sheet_name)
         columns = self.get_column_names(sheet_name)
@@ -1424,6 +1441,7 @@ class PostgresRepository:
         return self.find_row_index(sheet_name, key_col_idx, key_value) is not None
 
     def append_row(self, sheet_name: str, values: Sequence[Any]) -> None:
+        sql = get_psycopg_sql()
         headers = self.get_sheet_headers(sheet_name)
         row_values = list(values)[:len(headers)] + [None] * (len(headers) - len(values))
         table_name = self.get_table_name(sheet_name)
@@ -1449,6 +1467,7 @@ class PostgresRepository:
         self.append_row(sheet_name, [row_dict.get(header) for header in headers])
 
     def update_row_by_key(self, sheet_name: str, key_col_idx: int, key_value: Any, updates: Dict[int, Any]) -> bool:
+        sql = get_psycopg_sql()
         if not updates:
             return False
         headers = self.get_sheet_headers(sheet_name)
@@ -1494,6 +1513,7 @@ class PostgresRepository:
         return self.update_row_by_key(sheet_name, key_col_idx, key_value, {idx: value for idx, value in enumerate(values)})
 
     def upsert_row(self, sheet_name: str, key_col_idx: int, key_value: Any, full_row: Sequence[Any]) -> str:
+        sql = get_psycopg_sql()
         headers = self.get_sheet_headers(sheet_name)
         row_values = list(full_row)[:len(headers)] + [None] * (len(headers) - len(full_row))
         table_name = self.get_table_name(sheet_name)
@@ -1533,6 +1553,7 @@ class PostgresRepository:
         return self.upsert_row(sheet_name, header_map[key_name], row_dict.get(key_name), row)
 
     def delete_row_by_key(self, sheet_name: str, key_col_idx: int, key_value: Any) -> bool:
+        sql = get_psycopg_sql()
         table_name = self.get_table_name(sheet_name)
         key_column = self.get_column_names(sheet_name)[key_col_idx]
         query = sql.SQL("DELETE FROM {table} WHERE {key_col} = {key_val}").format(
@@ -1570,6 +1591,7 @@ class PostgresRepository:
         return deleted
 
     def clear_sheet_data(self, sheet_name: str) -> None:
+        sql = get_psycopg_sql()
         table_name = self.get_table_name(sheet_name)
         query = sql.SQL("TRUNCATE TABLE {table}").format(table=sql.Identifier(table_name))
         conn, owns_connection = self._get_connection()
