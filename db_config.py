@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
+from importlib import import_module
 from pathlib import Path
 
-import psycopg
 from dotenv import load_dotenv
 
 
@@ -42,4 +42,5 @@ def get_database_settings() -> dict[str, str]:
 def connect(**overrides):
     settings = get_database_settings()
     settings.update({k: v for k, v in overrides.items() if v is not None})
+    psycopg = import_module("psycopg")
     return psycopg.connect(**settings)

@@ -626,29 +626,17 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
 from app_config import AppConfig
+from db_config import connect as connect_postgres
+from db_config import get_database_settings, load_project_env
+
+
+def get_psycopg_sql():
+    return import_module("psycopg.sql")
 
 
 # ============================================================
 # Basic helpers
 # ============================================================
-
-def load_project_env(env_file: Path | None = None) -> Path:
-    db_config = import_module("db_config")
-    return db_config.load_project_env(env_file)
-
-
-def get_database_settings() -> dict[str, str]:
-    db_config = import_module("db_config")
-    return db_config.get_database_settings()
-
-
-def connect_postgres(**overrides):
-    db_config = import_module("db_config")
-    return db_config.connect(**overrides)
-
-
-def get_psycopg_sql():
-    return import_module("psycopg.sql")
 
 def now_str() -> str:
     from datetime import datetime
