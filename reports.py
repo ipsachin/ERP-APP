@@ -6,17 +6,23 @@
 from __future__ import annotations
 
 from pathlib import Path
+from importlib import import_module
 from typing import List, Optional
 
 from tkinter import filedialog, simpledialog
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-
 from app_config import AppConfig
+
+colors = None
+A4 = None
+getSampleStyleSheet = None
+ParagraphStyle = None
+mm = None
+SimpleDocTemplate = None
+Table = None
+TableStyle = None
+Paragraph = None
+Spacer = None
 
 
 def norm_text(value) -> str:
@@ -33,6 +39,49 @@ def safe_filename(text: str, replacement: str = "_") -> str:
         text = text.replace("__", "_")
     text = text.strip(" ._")
     return text or "output"
+
+
+def get_reportlab():
+    try:
+        colors = import_module("reportlab.lib.colors")
+        A4 = import_module("reportlab.lib.pagesizes").A4
+        styles = import_module("reportlab.lib.styles")
+        mm = import_module("reportlab.lib.units").mm
+        platypus = import_module("reportlab.platypus")
+        return {
+            "colors": colors,
+            "A4": A4,
+            "getSampleStyleSheet": styles.getSampleStyleSheet,
+            "ParagraphStyle": styles.ParagraphStyle,
+            "mm": mm,
+            "SimpleDocTemplate": platypus.SimpleDocTemplate,
+            "Table": platypus.Table,
+            "TableStyle": platypus.TableStyle,
+            "Paragraph": platypus.Paragraph,
+            "Spacer": platypus.Spacer,
+        }
+    except ImportError as exc:
+        raise RuntimeError(
+            "PDF reporting is not available in this build because ReportLab is missing."
+        ) from exc
+
+
+def ensure_reportlab_loaded() -> None:
+    global colors, A4, getSampleStyleSheet, ParagraphStyle, mm
+    global SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    if Paragraph is not None:
+        return
+    modules = get_reportlab()
+    colors = modules["colors"]
+    A4 = modules["A4"]
+    getSampleStyleSheet = modules["getSampleStyleSheet"]
+    ParagraphStyle = modules["ParagraphStyle"]
+    mm = modules["mm"]
+    SimpleDocTemplate = modules["SimpleDocTemplate"]
+    Table = modules["Table"]
+    TableStyle = modules["TableStyle"]
+    Paragraph = modules["Paragraph"]
+    Spacer = modules["Spacer"]
 
 
 class ReportService:
@@ -160,6 +209,7 @@ class ReportService:
     # ========================================================
 
     def build_module_pdf(self, module_code: str, pdf_path: str) -> None:
+        ensure_reportlab_loaded()
         bundle = self.services.modules.get_module_bundle(module_code)
         if not bundle.module:
             raise ValueError("Module not found.")
@@ -298,6 +348,7 @@ class ReportService:
         doc.build(elements)
 
     def build_product_quote_pdf(self, product_code: str, pdf_path: str) -> None:
+        ensure_reportlab_loaded()
         bundle = self.services.products.get_product_bundle(product_code)
         if not bundle.product:
             raise ValueError("Product not found.")
@@ -493,6 +544,7 @@ class ReportService:
         doc.build(elements)
 
     def build_project_report_pdf(self, project_code: str, pdf_path: str) -> None:
+        ensure_reportlab_loaded()
         bundle = self.services.projects.get_project_bundle(project_code)
         if not bundle.project:
             raise ValueError("Project not found.")

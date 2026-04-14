@@ -3,14 +3,22 @@
 from PyInstaller.utils.hooks import collect_all
 
 
-psycopg_datas, psycopg_binaries, psycopg_hiddenimports = collect_all('psycopg')
+runtime_datas = []
+runtime_binaries = []
+runtime_hiddenimports = []
+
+for package_name in ('psycopg', 'dotenv', 'openpyxl', 'reportlab', 'PIL'):
+    package_datas, package_binaries, package_hiddenimports = collect_all(package_name)
+    runtime_datas += package_datas
+    runtime_binaries += package_binaries
+    runtime_hiddenimports += package_hiddenimports
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=psycopg_binaries,
-    datas=[('assets', 'assets'), ('workspace/data', 'workspace/data'), *psycopg_datas],
-    hiddenimports=psycopg_hiddenimports,
+    binaries=runtime_binaries,
+    datas=[('assets', 'assets'), ('workspace/data', 'workspace/data'), *runtime_datas],
+    hiddenimports=runtime_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
