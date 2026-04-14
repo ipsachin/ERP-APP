@@ -346,6 +346,8 @@ If this command does not work, instead of calling pyinstaller directly, use the 
 python -m PyInstaller '.\Liquimech ERP.spec'
 ```
 
+Use the spec file for release builds. It includes the extra PyInstaller collection rules needed for the bundled `psycopg` PostgreSQL driver, especially on Windows.
+
 Or build directly from the entry point.
 
 On macOS or Linux:

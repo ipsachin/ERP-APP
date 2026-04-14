@@ -1,11 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_all
+
+
+psycopg_datas, psycopg_binaries, psycopg_hiddenimports = collect_all('psycopg')
+
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
-    datas=[('assets', 'assets'), ('workspace/data', 'workspace/data')],
-    hiddenimports=[],
+    binaries=psycopg_binaries,
+    datas=[('assets', 'assets'), ('workspace/data', 'workspace/data'), *psycopg_datas],
+    hiddenimports=psycopg_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
