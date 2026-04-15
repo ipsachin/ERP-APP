@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 import tkinter as tk
 from tkinter import ttk, filedialog
 from typing import Dict, List, Optional, Tuple
@@ -2550,6 +2551,12 @@ def _v3_build_summary_tab(self, parent):
 
 
 def _v3_lookup_part_price(self, comp):
+    if float(getattr(comp, 'unit_price', 0) or 0):
+        return float(getattr(comp, 'unit_price', 0) or 0)
+    notes = norm_text(getattr(comp, 'notes', ''))
+    m = re.search(r"UnitPrice\s*=\s*([0-9]+(?:\.[0-9]+)?)", notes, re.I)
+    if m:
+        return float(m.group(1) or 0)
     # Try dedicated Parts sheet first; fall back to optional UnitPrice on Components row if present.
     candidates = [norm_text(getattr(comp, 'part_number', '')), norm_text(getattr(comp, 'component_name', ''))]
     try:
@@ -2586,13 +2593,15 @@ def _v3_load_summary(self, bundle):
         blockers = self.app.services.scheduler.get_open_blockers_for_project(project.project_code)
     except Exception:
         blockers = []
-    total_parts_cost = 0.0
-    for p in project_parts:
-        try:
-            total_parts_cost += float(getattr(p, 'qty', 0) or 0) * float(_v3_lookup_part_price(self, p) or 0)
-        except Exception:
-            pass
-    total_labour = float(bundle.total_hours or 0.0)
+    try:
+        rollup = getattr(bundle, 'rollup', None) or self.app.services.projects.get_project_rollup(project.project_code)
+    except Exception:
+        rollup = {}
+    total_labour = float(rollup.get('labour_hours', bundle.total_hours or 0.0) or 0.0)
+    assembly_parts_cost = float(rollup.get('assembly_parts_cost', 0.0) or 0.0)
+    direct_parts_cost = float(rollup.get('direct_parts_cost', 0.0) or 0.0)
+    total_parts_cost = float(rollup.get('parts_cost', 0.0) or 0.0)
+    rollup_parts = rollup.get('parts', []) or []
     lines = [
         f"Order Code: {project.project_code}",
         f"Quote Ref: {project.quote_ref}",
@@ -2611,7 +2620,9 @@ def _v3_load_summary(self, bundle):
         f"Documents: {len(project_docs)}",
         f"Job Cards: {len(workorders)}",
         f"Total Labour Hours: {total_labour:.2f}",
-        f"Estimated Parts Cost: ${total_parts_cost:,.2f}",
+        f"Assembly Parts Cost: ${assembly_parts_cost:,.2f}",
+        f"Direct Parts Cost: ${direct_parts_cost:,.2f}",
+        f"Total Estimated Parts Cost: ${total_parts_cost:,.2f}",
         '',
         'Order Visibility Summary:',
     ]
@@ -2621,14 +2632,18 @@ def _v3_load_summary(self, bundle):
             lines.append(f" {link.module_order:02d}. {link.module_code} | Qty {link.module_qty} | Stage {link.stage} | Status {link.status}{dep_text}")
     else:
         lines.append(' - No assemblies loaded.')
-    lines += ['', 'Direct Parts:']
-    if project_parts:
-        for p in project_parts[:30]:
-            unit = _v3_lookup_part_price(self, p)
-            ext = (float(getattr(p, 'qty', 0) or 0) * float(unit or 0))
-            lines.append(f" - {p.component_name} | PN {p.part_number or '-'} | Qty {p.qty} | Unit ${unit:,.2f} | Ext ${ext:,.2f}")
-        if len(project_parts) > 30:
-            lines.append(f" - ... plus {len(project_parts)-30} more")
+    lines += ['', 'Parts Rollup:']
+    if rollup_parts:
+        for p in rollup_parts[:40]:
+            source = p.get('source') or 'Part'
+            assembly = f" | {p.get('assembly_code')}" if p.get('assembly_code') else ''
+            lines.append(
+                f" - {source}{assembly}: {p.get('name')} | PN {p.get('part_number') or '-'} | "
+                f"Qty {float(p.get('qty', 0) or 0):g} | Unit ${float(p.get('unit_price', 0) or 0):,.2f} | "
+                f"Ext ${float(p.get('line_total', 0) or 0):,.2f}"
+            )
+        if len(rollup_parts) > 40:
+            lines.append(f" - ... plus {len(rollup_parts)-40} more")
     else:
         lines.append(' - None')
     lines += ['', 'Open Blockers:']

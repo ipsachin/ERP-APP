@@ -2692,6 +2692,7 @@ def _module_list_parts(self, search_text: str = ""):
             soh_qty=to_float(r.get("SOHQty")),
             preferred_supplier=norm_text(r.get("PreferredSupplier")),
             lead_time_days=to_int(r.get("LeadTimeDays")),
+            unit_price=_component_row_unit_price(r),
             part_number=norm_text(r.get("PartNumber")),
             notes=norm_text(r.get("Notes")),
             created_on=norm_text(r.get("CreatedOn")),
@@ -2722,6 +2723,7 @@ def _module_get_part(self, component_id: str):
         soh_qty=to_float(row.get("SOHQty")),
         preferred_supplier=norm_text(row.get("PreferredSupplier")),
         lead_time_days=to_int(row.get("LeadTimeDays")),
+        unit_price=_component_row_unit_price(row),
         part_number=norm_text(row.get("PartNumber")),
         notes=norm_text(row.get("Notes")),
         created_on=norm_text(row.get("CreatedOn")),
@@ -2767,6 +2769,335 @@ ModuleService.get_part = _module_get_part
 ModuleService.add_part = _module_add_part
 ModuleService.list_assemblies = _module_list_assemblies
 ProjectService.list_orders = _project_list_orders
+
+
+def _extract_unit_price_from_notes(notes: str) -> float:
+    match = re.search(r"UnitPrice\s*=\s*([0-9]+(?:\.[0-9]+)?)", norm_text(notes), re.I)
+    return to_float(match.group(1)) if match else 0.0
+
+
+def _extract_source_part_id(notes: str) -> str:
+    match = re.search(r"SourcePartID=([^|]+)", norm_text(notes))
+    return norm_text(match.group(1)) if match else ""
+
+
+def _component_row_unit_price(row: Dict[str, Any]) -> float:
+    return to_float(row.get("UnitPrice")) or _extract_unit_price_from_notes(row.get("Notes"))
+
+
+def _component_record_from_row(row: Dict[str, Any], unit_price: float = 0.0) -> ComponentRecord:
+    return ComponentRecord(
+        component_id=norm_text(row.get("ComponentID")),
+        owner_type=norm_text(row.get("OwnerType")),
+        owner_code=norm_text(row.get("OwnerCode")),
+        component_name=norm_text(row.get("ComponentName")),
+        qty=to_float(row.get("Qty")),
+        soh_qty=to_float(row.get("SOHQty")),
+        preferred_supplier=norm_text(row.get("PreferredSupplier")),
+        lead_time_days=to_int(row.get("LeadTimeDays")),
+        unit_price=to_float(unit_price) or _component_row_unit_price(row),
+        part_number=norm_text(row.get("PartNumber")),
+        notes=norm_text(row.get("Notes")),
+        created_on=norm_text(row.get("CreatedOn")),
+        updated_on=norm_text(row.get("UpdatedOn")),
+    )
+
+
+def _lookup_component_unit_price(repo, comp) -> float:
+    part_number = norm_text(getattr(comp, "part_number", "")) if not isinstance(comp, dict) else norm_text(comp.get("PartNumber"))
+    component_name = norm_text(getattr(comp, "component_name", "")) if not isinstance(comp, dict) else norm_text(comp.get("ComponentName"))
+    component_id = norm_text(getattr(comp, "component_id", "")) if not isinstance(comp, dict) else norm_text(comp.get("ComponentID"))
+    notes = norm_text(getattr(comp, "notes", "")) if not isinstance(comp, dict) else norm_text(comp.get("Notes"))
+
+    if isinstance(comp, dict):
+        direct_price = _component_row_unit_price(comp)
+    else:
+        direct_price = to_float(getattr(comp, "unit_price", 0)) or _extract_unit_price_from_notes(notes)
+    if direct_price:
+        return direct_price
+
+    try:
+        component_rows = repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS)
+    except Exception:
+        component_rows = []
+
+    source_part_id = _extract_source_part_id(notes)
+    if source_part_id:
+        for row in component_rows:
+            if norm_text(row.get("ComponentID")) == source_part_id:
+                price = _component_row_unit_price(row)
+                if price:
+                    return price
+
+    if component_id:
+        for row in component_rows:
+            if norm_text(row.get("ComponentID")) == component_id:
+                price = _component_row_unit_price(row)
+                if price:
+                    return price
+                source_part_id = _extract_source_part_id(row.get("Notes"))
+                if source_part_id:
+                    for part_row in component_rows:
+                        if norm_text(part_row.get("ComponentID")) == source_part_id:
+                            price = _component_row_unit_price(part_row)
+                            if price:
+                                return price
+
+    try:
+        part_rows = repo.read_sheet_as_dicts(AppConfig.SHEET_PARTS)
+    except Exception:
+        part_rows = []
+    for row in part_rows:
+        if (
+            (part_number and norm_text(row.get("PartNumber")).lower() == part_number.lower())
+            or (component_name and norm_text(row.get("PartName")).lower() == component_name.lower())
+        ):
+            price = to_float(row.get("UnitPrice"))
+            if price:
+                return price
+
+    for row in component_rows:
+        if norm_text(row.get("OwnerType")) != "PART":
+            continue
+        if (
+            (part_number and norm_text(row.get("PartNumber")).lower() == part_number.lower())
+            or (component_name and norm_text(row.get("ComponentName")).lower() == component_name.lower())
+        ):
+            price = _component_row_unit_price(row)
+            if price:
+                return price
+
+    return 0.0
+
+
+def _rollup_get_module_components(self, module_code: str) -> List[ComponentRecord]:
+    rows = self.repo.filter_dicts(
+        AppConfig.SHEET_COMPONENTS,
+        lambda r: norm_text(r.get("OwnerType")) == "MODULE" and norm_text(r.get("OwnerCode")) == norm_text(module_code)
+    )
+    return [
+        _component_record_from_row(r, _lookup_component_unit_price(self.repo, r))
+        for r in rows
+    ]
+
+
+def _rollup_product_get_parts(self, product_code: str):
+    rows = self.repo.filter_dicts(
+        AppConfig.SHEET_COMPONENTS,
+        lambda r: norm_text(r.get("OwnerType")) == "PRODUCT" and norm_text(r.get("OwnerCode")) == norm_text(product_code)
+    )
+    return [
+        _component_record_from_row(r, _lookup_component_unit_price(self.repo, r))
+        for r in rows
+    ]
+
+
+def _rollup_project_get_parts(self, project_code: str):
+    rows = self.repo.filter_dicts(
+        AppConfig.SHEET_COMPONENTS,
+        lambda r: norm_text(r.get("OwnerType")) == "PROJECT" and norm_text(r.get("OwnerCode")) == norm_text(project_code)
+    )
+    return [
+        _component_record_from_row(r, _lookup_component_unit_price(self.repo, r))
+        for r in rows
+    ]
+
+
+def _calculate_project_rollup(service, bundle: ProjectBundle) -> Dict[str, Any]:
+    module_links = getattr(bundle, "module_links", []) or []
+    project_tasks = getattr(bundle, "project_tasks", []) or []
+    project_parts = getattr(bundle, "project_parts", []) or []
+
+    tasks_by_module: Dict[str, List[ProjectTaskRecord]] = {}
+    direct_tasks: List[ProjectTaskRecord] = []
+    for task in project_tasks:
+        module_code = norm_text(getattr(task, "module_code", ""))
+        if module_code:
+            tasks_by_module.setdefault(module_code, []).append(task)
+        else:
+            direct_tasks.append(task)
+
+    labour_hours = sum(to_float(getattr(task, "estimated_hours", 0)) for task in direct_tasks)
+    assembly_parts_cost = 0.0
+    direct_parts_cost = 0.0
+    assembly_quotes = []
+    parts = []
+
+    for link in module_links:
+        module_code = norm_text(getattr(link, "module_code", ""))
+        qty_multiplier = max(1, to_int(getattr(link, "module_qty", 1), 1))
+        module_tasks = tasks_by_module.get(module_code, [])
+        if module_tasks:
+            hours_each = sum(to_float(getattr(task, "estimated_hours", 0)) for task in module_tasks)
+        else:
+            hours_each = sum(
+                to_float(getattr(task, "estimated_hours", 0))
+                for task in service.module_service.get_module_tasks(module_code)
+            )
+        hours_total = hours_each * qty_multiplier
+        labour_hours += hours_total
+
+        module_parts_cost_each = 0.0
+        module_parts = service.module_service.get_module_components(module_code)
+        for comp in module_parts:
+            unit_price = _lookup_component_unit_price(service.repo, comp)
+            line_qty = to_float(getattr(comp, "qty", 0)) * qty_multiplier
+            line_total = line_qty * unit_price
+            module_parts_cost_each += to_float(getattr(comp, "qty", 0)) * unit_price
+            assembly_parts_cost += line_total
+            parts.append({
+                "source": "Assembly",
+                "assembly_code": module_code,
+                "name": norm_text(getattr(comp, "component_name", "")),
+                "part_number": norm_text(getattr(comp, "part_number", "")),
+                "qty": line_qty,
+                "unit_price": unit_price,
+                "line_total": line_total,
+            })
+
+        assembly_quotes.append({
+            "assembly_code": module_code,
+            "assembly_name": module_code,
+            "qty": qty_multiplier,
+            "parts_cost_each": module_parts_cost_each,
+            "parts_cost_total": module_parts_cost_each * qty_multiplier,
+            "hours_each": hours_each,
+            "hours_total": hours_total,
+        })
+
+    for comp in project_parts:
+        unit_price = _lookup_component_unit_price(service.repo, comp)
+        line_qty = to_float(getattr(comp, "qty", 0))
+        line_total = line_qty * unit_price
+        direct_parts_cost += line_total
+        parts.append({
+            "source": "Direct",
+            "assembly_code": "",
+            "name": norm_text(getattr(comp, "component_name", "")),
+            "part_number": norm_text(getattr(comp, "part_number", "")),
+            "qty": line_qty,
+            "unit_price": unit_price,
+            "line_total": line_total,
+        })
+
+    return {
+        "labour_hours": labour_hours,
+        "assembly_parts_cost": assembly_parts_cost,
+        "direct_parts_cost": direct_parts_cost,
+        "parts_cost": assembly_parts_cost + direct_parts_cost,
+        "assembly_quotes": assembly_quotes,
+        "parts": parts,
+    }
+
+
+def _rollup_get_project_bundle(self, project_code: str) -> ProjectBundle:
+    bundle = _patched_get_project_bundle(self, project_code)
+    rollup = _calculate_project_rollup(self, bundle)
+    bundle.total_hours = rollup["labour_hours"]
+    bundle.rollup = rollup
+    return bundle
+
+
+def _project_get_project_rollup(self, project_code: str) -> Dict[str, Any]:
+    bundle = _patched_get_project_bundle(self, project_code)
+    return _calculate_project_rollup(self, bundle)
+
+
+def _rollup_snapshot_completed_project(self, project_code: str) -> str:
+    self._ensure_completed_job_sheets()
+    project = self.get_project(project_code)
+    if not project:
+        raise ValueError("Project not found.")
+
+    ts = now_str()
+    snapshot_id = f"SNAP::{project_code}::{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    bundle = self.get_project_bundle(project_code)
+    rollup = getattr(bundle, "rollup", None) or self.get_project_rollup(project_code)
+
+    product_name = ""
+    if norm_text(project.linked_product_code):
+        try:
+            product = self.product_service.get_product(project.linked_product_code)
+            product_name = norm_text(getattr(product, "product_name", ""))
+        except Exception:
+            product_name = ""
+
+    parts_total = to_float(rollup.get("parts_cost"))
+    labour_hours = to_float(rollup.get("labour_hours"))
+
+    self.repo.append_dict(AppConfig.SHEET_COMPLETED_JOBS, {
+        "SnapshotID": snapshot_id,
+        "ProjectCode": project.project_code,
+        "QuoteRef": project.quote_ref,
+        "ProductCode": project.linked_product_code,
+        "ProductName": product_name,
+        "ClientName": project.client_name,
+        "CompletedOn": ts,
+        "LabourHours": labour_hours,
+        "PartsTotal": parts_total,
+        "GrandTotal": parts_total,
+        "Notes": "Frozen snapshot created on completion.",
+    })
+
+    line_no = 1
+    for aq in rollup.get("assembly_quotes", []) or []:
+        self.repo.append_dict(AppConfig.SHEET_COMPLETED_JOB_LINES, {
+            "SnapshotLineID": f"{snapshot_id}-ASM-{line_no:03d}",
+            "SnapshotID": snapshot_id,
+            "LineType": "ASSEMBLY",
+            "Code": norm_text(aq.get("assembly_code")),
+            "Description": norm_text(aq.get("assembly_name")) or norm_text(aq.get("assembly_code")),
+            "PartNumber": "",
+            "Qty": to_float(aq.get("qty")),
+            "Hours": to_float(aq.get("hours_total")),
+            "UnitPrice": 0.0,
+            "LineTotal": 0.0,
+            "Source": "PROJECT_ASSEMBLY",
+        })
+        line_no += 1
+
+    for part in rollup.get("parts", []) or []:
+        self.repo.append_dict(AppConfig.SHEET_COMPLETED_JOB_LINES, {
+            "SnapshotLineID": f"{snapshot_id}-PART-{line_no:03d}",
+            "SnapshotID": snapshot_id,
+            "LineType": "PART",
+            "Code": norm_text(part.get("name")),
+            "Description": norm_text(part.get("name")),
+            "PartNumber": norm_text(part.get("part_number")),
+            "Qty": to_float(part.get("qty")),
+            "Hours": 0.0,
+            "UnitPrice": to_float(part.get("unit_price")),
+            "LineTotal": to_float(part.get("line_total")),
+            "Source": norm_text(part.get("source")) or "PROJECT_PART",
+        })
+        line_no += 1
+
+    return snapshot_id
+
+
+def _rollup_department_workload_for_project(self, project_code: str) -> Dict[str, float]:
+    tasks = self.project_service.get_project_tasks(project_code)
+    links = self.project_service.get_project_module_links(project_code)
+    module_qty = {
+        norm_text(link.module_code): max(1, to_int(getattr(link, "module_qty", 1), 1))
+        for link in links
+    }
+    output: Dict[str, float] = {}
+    for task in tasks:
+        dept = norm_text(task.department) or "Unassigned"
+        multiplier = module_qty.get(norm_text(task.module_code), 1)
+        output[dept] = output.get(dept, 0.0) + to_float(task.estimated_hours) * multiplier
+    return output
+
+
+ModuleService.get_module_components = _rollup_get_module_components
+ProductService.get_product_parts = _rollup_product_get_parts
+ProductService.get_product_components = _rollup_product_get_parts
+ProjectService.get_project_parts = _rollup_project_get_parts
+ProjectService.get_project_bundle = _rollup_get_project_bundle
+ProjectService.get_project_rollup = _project_get_project_rollup
+ProjectService.snapshot_completed_project = _rollup_snapshot_completed_project
+SchedulerService.get_department_workload_for_project = _rollup_department_workload_for_project
 
 
 class ERPServiceHub(ERPServiceHub):
