@@ -18,7 +18,7 @@ from reports import ReportService
 from mailer import MailerService
 from updater import AppUpdater
 
-from ui_common import setup_ttk_styles
+from ui_common import compact_widget_spacing, setup_ttk_styles
 from ui_home import HomePage
 from ui_modules import ModulePage
 from ui_products import ProductPage
@@ -81,6 +81,7 @@ class ERPDesktopApp:
         self._build_menu()
         self._build_shell()
         self._build_pages()
+        compact_widget_spacing(self.page_container)
         self.root.protocol("WM_DELETE_WINDOW", self._handle_close)
 
         self.show_page("home")
@@ -115,14 +116,14 @@ class ERPDesktopApp:
         self.menubar = menubar
 
     def _build_shell(self):
-        self.topbar = ttk.Frame(self.root, padding=10, style="TFrame")
+        self.topbar = ttk.Frame(self.root, padding=(8, 5), style="TFrame")
         self.topbar.pack(fill="x")
 
         left = ttk.Frame(self.topbar)
         left.pack(side="left", fill="x", expand=True)
 
         self.top_logo_label = ttk.Label(left)
-        self.top_logo_label.pack(side="left", padx=(0, 10))
+        self.top_logo_label.pack(side="left", padx=(0, 6))
         self._load_top_logo()
 
         ttk.Label(
@@ -137,7 +138,7 @@ class ERPDesktopApp:
             style="Sub.TLabel",
             anchor="w"
         )
-        self.status_bar.pack(fill="x", padx=12, pady=(0, 6))
+        self.status_bar.pack(fill="x", padx=8, pady=(0, 3))
 
         self.page_container = ttk.Frame(self.root)
         self.page_container.pack(fill="both", expand=True)

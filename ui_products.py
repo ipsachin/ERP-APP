@@ -1540,6 +1540,10 @@ def _patched_load_summary(self, bundle):
     workorders = bundle.workorders or []
     tasks_by_module = bundle.tasks_by_module or {}
     parts = self.app.services.products.get_product_parts(product.product_code)
+    try:
+        rollup = getattr(bundle, 'rollup', None) or self.app.services.products.get_product_rollup(product.product_code)
+    except Exception:
+        rollup = {}
     lines = [
         f"Product Code: {product.product_code}",
         f"Quote Ref: {product.quote_ref}",
@@ -1553,6 +1557,10 @@ def _patched_load_summary(self, bundle):
         f"Product Documents: {len(docs)}",
         f"Work Orders: {len(workorders)}",
         f"Aggregated Product Hours: {float(bundle.total_hours or 0.0):.2f}",
+        f"Assembly Parts Cost: ${float(rollup.get('assembly_parts_cost', 0.0) or 0.0):,.2f}",
+        f"Direct Parts Cost: ${float(rollup.get('direct_parts_cost', 0.0) or 0.0):,.2f}",
+        f"Total Parts Cost: ${float(rollup.get('parts_cost', 0.0) or 0.0):,.2f}",
+        f"Overall Parts Lead Time: {int(float(rollup.get('lead_time_days', 0) or 0))} days",
         "",
         "Assembly Breakdown:",
     ]

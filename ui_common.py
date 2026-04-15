@@ -395,6 +395,8 @@ def setup_ttk_styles(root: tk.Tk) -> None:
         pass
 
     root.configure(bg=AppConfig.COLOR_BG)
+    root.option_add("*Font", (AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL))
+    root.option_add("*Menu.Font", (AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL))
 
     # Base
     style.configure("TFrame", background=AppConfig.COLOR_BG)
@@ -437,7 +439,7 @@ def setup_ttk_styles(root: tk.Tk) -> None:
         "Card.TLabelframe.Label",
         background=AppConfig.COLOR_CARD,
         foreground=AppConfig.COLOR_TEXT,
-        font=(AppConfig.FONT_FAMILY, 11, "bold"),
+        font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL, "bold"),
     )
     style.configure(
         "HomeCard.TLabelframe",
@@ -450,14 +452,14 @@ def setup_ttk_styles(root: tk.Tk) -> None:
         "HomeCard.TLabelframe.Label",
         background=AppConfig.COLOR_CARD,
         foreground=AppConfig.COLOR_TEXT,
-        font=(AppConfig.FONT_FAMILY, 11, "bold"),
+        font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL, "bold"),
     )
 
     # Standard buttons
     style.configure(
         "TButton",
         font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL, "bold"),
-        padding=8,
+        padding=(6, 4),
         background=AppConfig.COLOR_PRIMARY,
         foreground=AppConfig.COLOR_TEXT,
         borderwidth=1,
@@ -479,8 +481,8 @@ def setup_ttk_styles(root: tk.Tk) -> None:
     # Flat dashboard metric buttons
     style.configure(
         "Metric.TButton",
-        font=(AppConfig.FONT_FAMILY, 12, "bold"),
-        padding=8,
+        font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL, "bold"),
+        padding=(6, 4),
         background=AppConfig.COLOR_BG,
         foreground=AppConfig.COLOR_TEXT,
         borderwidth=0,
@@ -500,8 +502,8 @@ def setup_ttk_styles(root: tk.Tk) -> None:
     )
     style.configure(
         "HomeMetric.TButton",
-        font=(AppConfig.FONT_FAMILY, 12, "bold"),
-        padding=14,
+        font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL, "bold"),
+        padding=(10, 8),
         background=AppConfig.COLOR_CARD,
         foreground=AppConfig.COLOR_TEXT,
         borderwidth=2,
@@ -528,7 +530,7 @@ def setup_ttk_styles(root: tk.Tk) -> None:
         background="#FFFFFF",
         fieldbackground="#FFFFFF",
         foreground=AppConfig.COLOR_TEXT,
-        rowheight=30,
+        rowheight=23,
         font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL),
         bordercolor=AppConfig.COLOR_GRID,
         lightcolor=AppConfig.COLOR_GRID,
@@ -552,7 +554,7 @@ def setup_ttk_styles(root: tk.Tk) -> None:
     style.configure(
         "TNotebook.Tab",
         font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL, "bold"),
-        padding=(14, 8),
+        padding=(10, 4),
         background="#F1F3F5",
         foreground=AppConfig.COLOR_TEXT,
     )
@@ -565,16 +567,57 @@ def setup_ttk_styles(root: tk.Tk) -> None:
     # Inputs
     style.configure(
         "TEntry",
+        font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL),
+        padding=(4, 2),
         fieldbackground="#FFFFFF",
         foreground=AppConfig.COLOR_TEXT,
         bordercolor=AppConfig.COLOR_GRID,
     )
     style.configure(
         "TCombobox",
+        font=(AppConfig.FONT_FAMILY, AppConfig.FONT_SIZE_NORMAL),
+        padding=(4, 2),
         fieldbackground="#FFFFFF",
         foreground=AppConfig.COLOR_TEXT,
         bordercolor=AppConfig.COLOR_GRID,
     )
+
+
+def compact_widget_spacing(widget: tk.Widget) -> None:
+    """Reduce common Tk geometry padding for dense data-entry pages."""
+    for child in widget.winfo_children():
+        try:
+            info = child.pack_info()
+            updates = {}
+            for key in ("padx", "pady"):
+                value = info.get(key)
+                if isinstance(value, int):
+                    updates[key] = min(value, 3)
+                elif isinstance(value, tuple):
+                    updates[key] = tuple(min(int(v), 3) for v in value)
+            if updates:
+                child.pack_configure(**updates)
+        except Exception:
+            pass
+
+        try:
+            info = child.grid_info()
+            updates = {}
+            for key in ("padx", "pady"):
+                value = info.get(key)
+                if isinstance(value, int):
+                    updates[key] = min(value, 2)
+                elif isinstance(value, tuple):
+                    updates[key] = tuple(min(int(v), 2) for v in value)
+            if updates:
+                child.grid_configure(**updates)
+        except Exception:
+            pass
+
+        try:
+            compact_widget_spacing(child)
+        except Exception:
+            pass
 # ============================================================
 # Reusable dashboard card
 # ============================================================

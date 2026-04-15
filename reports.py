@@ -364,6 +364,11 @@ class ReportService:
             product_parts = self.services.products.get_product_components(product_code)
         except Exception:
             product_parts = []
+        rollup = {}
+        try:
+            rollup = getattr(bundle, "rollup", None) or self.services.products.get_product_rollup(product_code)
+        except Exception:
+            rollup = {}
 
         doc = self._doc(pdf_path)
         title_style, section_style, normal_style, small_bold = self._styles()
@@ -382,7 +387,10 @@ class ReportService:
             ["Assigned Assemblies", str(len(links))],
             ["Direct Product Parts", str(len(product_parts))],
             ["Aggregated Labour Hours", f"{float(bundle.total_hours or 0.0):.2f}"],
-            ["Direct Product Parts Cost", f"{sum(float(c.qty or 0.0) * float(c.unit_price or 0.0) for c in product_parts):.2f}"],
+            ["Assembly Parts Cost", f"{float(rollup.get('assembly_parts_cost', 0.0)):.2f}"],
+            ["Direct Product Parts Cost", f"{float(rollup.get('direct_parts_cost', 0.0)):.2f}"],
+            ["Total Parts Cost", f"{float(rollup.get('parts_cost', 0.0)):.2f}"],
+            ["Overall Parts Lead Time", f"{int(float(rollup.get('lead_time_days', 0) or 0))} days"],
         ]
         elements.append(self._summary_table(summary_data))
         elements.append(Spacer(1, 10))
@@ -591,6 +599,9 @@ class ReportService:
             ["Work Orders", str(len(workorders))],
             ["Labour Hours", f"{float(bundle.total_hours or 0.0):.2f}"],
             ["Rolled-up Parts Cost", f"{float(rollup.get('parts_cost', 0.0)):.2f}"],
+            ["Assembly Parts Lead Time", f"{int(float(rollup.get('assembly_lead_time_days', 0) or 0))} days"],
+            ["Direct Parts Lead Time", f"{int(float(rollup.get('direct_lead_time_days', 0) or 0))} days"],
+            ["Overall Parts Lead Time", f"{int(float(rollup.get('lead_time_days', 0) or 0))} days"],
             ["Open Blockers", str(len(blockers))],
         ]
         elements.append(self._summary_table(summary_data))
@@ -602,6 +613,7 @@ class ReportService:
                 Paragraph("<b>Assembly</b>", small_bold),
                 Paragraph("<b>Qty</b>", small_bold),
                 Paragraph("<b>Parts Cost</b>", small_bold),
+                Paragraph("<b>Lead</b>", small_bold),
                 Paragraph("<b>Labour Hours</b>", small_bold),
             ]]
             for aq in rollup.get("assembly_quotes", []):
@@ -609,9 +621,10 @@ class ReportService:
                     Paragraph(f"{aq.get('assembly_code')} - {aq.get('assembly_name') or ''}", normal_style),
                     Paragraph(str(aq.get('qty', 0)), normal_style),
                     Paragraph(f"{float(aq.get('parts_cost_total', 0.0)):.2f}", normal_style),
+                    Paragraph(f"{int(float(aq.get('lead_time_days', 0) or 0))}d", normal_style),
                     Paragraph(f"{float(aq.get('hours_total', 0.0)):.2f}", normal_style),
                 ])
-            table = Table(rows, colWidths=[80 * mm, 18 * mm, 35 * mm, 35 * mm], repeatRows=1)
+            table = Table(rows, colWidths=[70 * mm, 16 * mm, 30 * mm, 20 * mm, 30 * mm], repeatRows=1)
             table.setStyle(self._table_style())
             elements.append(table)
         else:

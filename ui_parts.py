@@ -44,25 +44,25 @@ class PartsPage(BasePage):
         self._build_ui()
 
     def _build_ui(self):
-        wrapper = ttk.Frame(self, padding=14)
+        wrapper = ttk.Frame(self, padding=8)
         wrapper.pack(fill="both", expand=True)
 
         top = ttk.Frame(wrapper)
-        top.pack(fill="x", pady=(0, 8))
+        top.pack(fill="x", pady=(0, 5))
 
         ttk.Button(top, text="← Back to Dashboard", command=lambda: self.show_page("home")).pack(side="left")
         ttk.Label(top, text="Parts Manager", style="Title.TLabel").pack(side="left", padx=(10, 0))
         ttk.Button(top, text="Refresh", command=self.refresh_page).pack(side="right")
 
         search_row = ttk.Frame(wrapper)
-        search_row.pack(fill="x", pady=(0, 8))
+        search_row.pack(fill="x", pady=(0, 5))
         ttk.Label(search_row, text="Search").pack(side="left")
         ent = ttk.Entry(search_row, textvariable=self.search_var)
-        ent.pack(side="left", fill="x", expand=True, padx=8)
+        ent.pack(side="left", fill="x", expand=True, padx=5)
         ttk.Button(search_row, text="Open Selected", command=self.open_selected_part).pack(side="left")
 
-        add_card = ttk.LabelFrame(wrapper, text="Add New Part", padding=10)
-        add_card.pack(fill="x", pady=(0, 8))
+        add_card = ttk.LabelFrame(wrapper, text="Add New Part", padding=6)
+        add_card.pack(fill="x", pady=(0, 5))
 
         self.new_part_name_var = tk.StringVar()
         self.new_part_number_var = tk.StringVar()
@@ -134,11 +134,11 @@ class PartsPage(BasePage):
         self.parts_tree.bind("<<TreeviewSelect>>", lambda e: self.show_part_details())
         self.parts_tree.bind("<Double-1>", lambda e: self.show_part_details())
 
-        detail_card = ttk.LabelFrame(right, text="Part Details", padding=10)
+        detail_card = ttk.LabelFrame(right, text="Part Details", padding=6)
         detail_card.pack(fill="both", expand=True)
 
         form = ttk.Frame(detail_card)
-        form.pack(fill="x", pady=(0, 8))
+        form.pack(fill="x", pady=(0, 5))
 
         fields = [
             ("Part Name", self.edit_part_name_var),
@@ -150,15 +150,18 @@ class PartsPage(BasePage):
             ("Unit Price", self.edit_price_var),
             ("Notes", self.edit_notes_var),
         ]
-        for r, (label, var) in enumerate(fields):
-            ttk.Label(form, text=label).grid(row=r, column=0, sticky="w", padx=(0, 6), pady=4)
-            ttk.Entry(form, textvariable=var).grid(row=r, column=1, sticky="ew", pady=4)
+        for idx, (label, var) in enumerate(fields):
+            r = idx // 2
+            c = (idx % 2) * 2
+            ttk.Label(form, text=label).grid(row=r, column=c, sticky="w", padx=(0, 4), pady=2)
+            ttk.Entry(form, textvariable=var).grid(row=r, column=c + 1, sticky="ew", padx=(0, 8), pady=2)
 
         btn_row = ttk.Frame(form)
-        btn_row.grid(row=len(fields), column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        ttk.Button(btn_row, text="Save Part", command=self.save_selected_part).pack(side="left", fill="x", expand=True, padx=(0, 4))
-        ttk.Button(btn_row, text="Delete Part", command=self.delete_selected_part).pack(side="left", fill="x", expand=True, padx=(4, 0))
+        btn_row.grid(row=(len(fields) + 1) // 2, column=0, columnspan=4, sticky="ew", pady=(5, 0))
+        ttk.Button(btn_row, text="Save Part", command=self.save_selected_part).pack(side="left", fill="x", expand=True, padx=(0, 3))
+        ttk.Button(btn_row, text="Delete Part", command=self.delete_selected_part).pack(side="left", fill="x", expand=True, padx=(3, 0))
         form.columnconfigure(1, weight=1)
+        form.columnconfigure(3, weight=1)
 
         self.detail_text = tk.Text(detail_card, wrap="word")
         dscroll = ttk.Scrollbar(detail_card, orient="vertical", command=self.detail_text.yview)

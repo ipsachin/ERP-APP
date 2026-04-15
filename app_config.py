@@ -46,10 +46,10 @@ class AppConfig:
     # --------------------------------------------------------
     APP_TITLE = "Liquimech Project Management Suite"
     APP_VERSION = load_app_version("1.0.0")
-    WINDOW_WIDTH = 1840
-    WINDOW_HEIGHT = 1040
-    MIN_WIDTH = 1440
-    MIN_HEIGHT = 860
+    WINDOW_WIDTH = 1680
+    WINDOW_HEIGHT = 940
+    MIN_WIDTH = 1280
+    MIN_HEIGHT = 760
     GITHUB_RELEASE_OWNER = "ipsachin"
     GITHUB_RELEASE_REPO = "ERP-APP"
     GITHUB_RELEASE_ASSET_NAME = "LiquimechERP-Setup.exe"
@@ -77,10 +77,10 @@ class AppConfig:
     COLOR_DANGER = "#EF4444"
 
     FONT_FAMILY = "Segoe UI"
-    FONT_SIZE_NORMAL = 10
-    FONT_SIZE_SMALL = 9
-    FONT_SIZE_TITLE = 18
-    FONT_SIZE_HERO = 24
+    FONT_SIZE_NORMAL = 9
+    FONT_SIZE_SMALL = 8
+    FONT_SIZE_TITLE = 15
+    FONT_SIZE_HERO = 20
 
     # --------------------------------------------------------
     # Working folders

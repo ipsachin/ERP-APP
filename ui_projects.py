@@ -2601,6 +2601,9 @@ def _v3_load_summary(self, bundle):
     assembly_parts_cost = float(rollup.get('assembly_parts_cost', 0.0) or 0.0)
     direct_parts_cost = float(rollup.get('direct_parts_cost', 0.0) or 0.0)
     total_parts_cost = float(rollup.get('parts_cost', 0.0) or 0.0)
+    assembly_lead = int(float(rollup.get('assembly_lead_time_days', 0) or 0))
+    direct_lead = int(float(rollup.get('direct_lead_time_days', 0) or 0))
+    total_lead = int(float(rollup.get('lead_time_days', 0) or 0))
     rollup_parts = rollup.get('parts', []) or []
     lines = [
         f"Order Code: {project.project_code}",
@@ -2623,6 +2626,9 @@ def _v3_load_summary(self, bundle):
         f"Assembly Parts Cost: ${assembly_parts_cost:,.2f}",
         f"Direct Parts Cost: ${direct_parts_cost:,.2f}",
         f"Total Estimated Parts Cost: ${total_parts_cost:,.2f}",
+        f"Assembly Parts Lead Time: {assembly_lead} days",
+        f"Direct Parts Lead Time: {direct_lead} days",
+        f"Overall Parts Lead Time: {total_lead} days",
         '',
         'Order Visibility Summary:',
     ]
@@ -2640,7 +2646,7 @@ def _v3_load_summary(self, bundle):
             lines.append(
                 f" - {source}{assembly}: {p.get('name')} | PN {p.get('part_number') or '-'} | "
                 f"Qty {float(p.get('qty', 0) or 0):g} | Unit ${float(p.get('unit_price', 0) or 0):,.2f} | "
-                f"Ext ${float(p.get('line_total', 0) or 0):,.2f}"
+                f"Ext ${float(p.get('line_total', 0) or 0):,.2f} | Lead {int(float(p.get('lead_time_days', 0) or 0))}d"
             )
         if len(rollup_parts) > 40:
             lines.append(f" - ... plus {len(rollup_parts)-40} more")
