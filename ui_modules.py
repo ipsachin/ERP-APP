@@ -441,7 +441,8 @@ class ModulePage(BasePage):
         card.pack(fill="x", pady=6)
 
         ttk.Label(card, text="Component").grid(row=0, column=0, sticky="w", pady=4)
-        ttk.Entry(card, textvariable=self.component_name_var).grid(row=0, column=1, sticky="ew", padx=6)
+        self.component_name_combo = ttk.Combobox(card, textvariable=self.component_name_var, state="normal")
+        self.component_name_combo.grid(row=0, column=1, sticky="ew", padx=6)
 
         ttk.Label(card, text="Qty").grid(row=1, column=0, sticky="w", pady=4)
         ttk.Entry(card, textvariable=self.component_qty_var).grid(row=1, column=1, sticky="ew", padx=6)
@@ -456,7 +457,8 @@ class ModulePage(BasePage):
         ttk.Entry(card, textvariable=self.component_lead_var).grid(row=4, column=1, sticky="ew", padx=6)
 
         ttk.Label(card, text="Part Number").grid(row=5, column=0, sticky="w", pady=4)
-        ttk.Entry(card, textvariable=self.component_partno_var).grid(row=5, column=1, sticky="ew", padx=6)
+        self.component_partno_combo = ttk.Combobox(card, textvariable=self.component_partno_var, state="normal")
+        self.component_partno_combo.grid(row=5, column=1, sticky="ew", padx=6)
 
         ttk.Label(card, text="Notes").grid(row=6, column=0, sticky="w", pady=4)
         ttk.Entry(card, textvariable=self.component_notes_var).grid(row=6, column=1, sticky="ew", padx=6)
@@ -469,6 +471,143 @@ class ModulePage(BasePage):
         ttk.Button(btn_row, text="Clear", command=self.clear_component_editor).pack(side="left", fill="x", expand=True, padx=2)
 
         card.columnconfigure(1, weight=1)
+        self._bind_component_part_search()
+        self._refresh_component_part_dropdowns()
+
+    def _collect_existing_parts_for_components(self):
+        parts = []
+        seen = set()
+
+        try:
+            if hasattr(self.app.services, "parts") and hasattr(self.app.services.parts, "list_parts"):
+                source_parts = self.app.services.parts.list_parts()
+            else:
+                source_parts = self.app.services.modules.list_parts()
+
+            for part in source_parts or []:
+                part_name = norm_text(getattr(part, "component_name", "")) or norm_text(getattr(part, "part_name", ""))
+                part_number = norm_text(getattr(part, "part_number", "")) or norm_text(getattr(part, "part_code", ""))
+                key = (part_name.lower(), part_number.lower())
+                if key in seen or not (part_name or part_number):
+                    continue
+                seen.add(key)
+                parts.append({
+                    "name": part_name,
+                    "part_number": part_number,
+                    "qty": getattr(part, "qty", ""),
+                    "soh": getattr(part, "soh_qty", ""),
+                    "supplier": norm_text(getattr(part, "preferred_supplier", "")) or norm_text(getattr(part, "supplier", "")),
+                    "lead": getattr(part, "lead_time_days", ""),
+                    "notes": norm_text(getattr(part, "notes", "")),
+                })
+            return sorted(parts, key=lambda p: (p["name"].lower(), p["part_number"].lower()))
+        except Exception:
+            pass
+
+        try:
+            repo = getattr(self.app, "repo", None)
+            if repo is None:
+                return []
+            rows = repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS)
+            for row in rows or []:
+                part_name = norm_text(row.get("ComponentName")) or norm_text(row.get("component_name"))
+                part_number = norm_text(row.get("PartNumber")) or norm_text(row.get("part_number"))
+                key = (part_name.lower(), part_number.lower())
+                if key in seen or not (part_name or part_number):
+                    continue
+                seen.add(key)
+                parts.append({
+                    "name": part_name,
+                    "part_number": part_number,
+                    "qty": row.get("Qty", ""),
+                    "soh": row.get("SOHQty", ""),
+                    "supplier": norm_text(row.get("PreferredSupplier")) or norm_text(row.get("preferred_supplier")),
+                    "lead": row.get("LeadTimeDays", ""),
+                    "notes": norm_text(row.get("Notes")) or norm_text(row.get("notes")),
+                })
+        except Exception:
+            return []
+
+        return sorted(parts, key=lambda p: (p["name"].lower(), p["part_number"].lower()))
+
+    def _refresh_component_part_dropdowns(self):
+        self._existing_component_parts = self._collect_existing_parts_for_components()
+        name_values = sorted({p["name"] for p in self._existing_component_parts if p["name"]})
+        partno_values = sorted({p["part_number"] for p in self._existing_component_parts if p["part_number"]})
+
+        if hasattr(self, "component_name_combo"):
+            self.component_name_combo["values"] = name_values
+            self.component_name_combo._all_values = name_values
+        if hasattr(self, "component_partno_combo"):
+            self.component_partno_combo["values"] = partno_values
+            self.component_partno_combo._all_values = partno_values
+
+    def _filter_component_part_combo(self, combo, typed_text):
+        values = list(getattr(combo, "_all_values", list(combo.cget("values"))))
+        typed = norm_text(typed_text).lower()
+        combo["values"] = [v for v in values if typed in str(v).lower()] if typed else values
+
+    def _reset_component_part_combo(self, combo):
+        combo["values"] = list(getattr(combo, "_all_values", list(combo.cget("values"))))
+
+    def _apply_existing_component_part(self, part):
+        self.component_name_var.set(part["name"])
+        self.component_partno_var.set(part["part_number"])
+        if not norm_text(self.component_qty_var.get()):
+            self.component_qty_var.set(str(part["qty"] or "1"))
+        self.component_soh_var.set(str(part["soh"] or ""))
+        self.component_supplier_var.set(part["supplier"])
+        self.component_lead_var.set(str(part["lead"] or ""))
+        self.component_notes_var.set(part["notes"])
+
+    def _on_component_name_selected(self, event=None):
+        selected_name = norm_text(self.component_name_var.get()).lower()
+        selected_partno = norm_text(self.component_partno_var.get()).lower()
+        fallback = None
+        for part in getattr(self, "_existing_component_parts", []):
+            if part["name"].lower() != selected_name:
+                continue
+            if fallback is None:
+                fallback = part
+            if selected_partno and part["part_number"].lower() == selected_partno:
+                fallback = part
+                break
+        if fallback is not None:
+            self._apply_existing_component_part(fallback)
+
+    def _on_component_partno_selected(self, event=None):
+        selected_partno = norm_text(self.component_partno_var.get()).lower()
+        selected_name = norm_text(self.component_name_var.get()).lower()
+        fallback = None
+        for part in getattr(self, "_existing_component_parts", []):
+            if part["part_number"].lower() != selected_partno:
+                continue
+            if fallback is None:
+                fallback = part
+            if selected_name and part["name"].lower() == selected_name:
+                fallback = part
+                break
+        if fallback is not None:
+            self._apply_existing_component_part(fallback)
+
+    def _bind_component_part_search(self):
+        if not hasattr(self, "component_name_combo") or not hasattr(self, "component_partno_combo"):
+            return
+
+        self.component_name_combo.bind("<<ComboboxSelected>>", self._on_component_name_selected)
+        self.component_partno_combo.bind("<<ComboboxSelected>>", self._on_component_partno_selected)
+        self.component_name_combo.bind(
+            "<KeyRelease>",
+            lambda e: self._filter_component_part_combo(self.component_name_combo, self.component_name_var.get())
+        )
+        self.component_partno_combo.bind(
+            "<KeyRelease>",
+            lambda e: self._filter_component_part_combo(self.component_partno_combo, self.component_partno_var.get())
+        )
+        self.component_name_combo.configure(postcommand=lambda: self._reset_component_part_combo(self.component_name_combo))
+        self.component_partno_combo.configure(postcommand=lambda: self._reset_component_part_combo(self.component_partno_combo))
+        self.component_name_combo.bind("<FocusIn>", lambda e: self._reset_component_part_combo(self.component_name_combo), add="+")
+        self.component_partno_combo.bind("<FocusIn>", lambda e: self._reset_component_part_combo(self.component_partno_combo), add="+")
 
     def _build_document_editor_card(self, parent):
         card = ttk.LabelFrame(parent, text="Document Upload", style="Card.TLabelframe", padding=12)
@@ -615,6 +754,7 @@ class ModulePage(BasePage):
         module_code = getattr(self.app, "selected_module_code", "").strip()
 
         self.refresh_module_selector()
+        self._refresh_component_part_dropdowns()
 
         if not module_code:
             self._clear_all_views()
