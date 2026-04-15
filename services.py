@@ -2681,6 +2681,8 @@ def _module_list_parts(self, search_text: str = ""):
     rows = self.repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS)
     out = []
     for r in rows:
+        if norm_text(r.get("OwnerType")) != "PART":
+            continue
         item = ComponentRecord(
             component_id=norm_text(r.get("ComponentID")),
             owner_type=norm_text(r.get("OwnerType")),

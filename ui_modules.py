@@ -492,6 +492,7 @@ class ModulePage(BasePage):
                     continue
                 seen.add(key)
                 parts.append({
+                    "component_id": norm_text(getattr(part, "component_id", "")),
                     "name": part_name,
                     "part_number": part_number,
                     "qty": getattr(part, "qty", ""),
@@ -510,6 +511,8 @@ class ModulePage(BasePage):
                 return []
             rows = repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS)
             for row in rows or []:
+                if norm_text(row.get("OwnerType")) != "PART":
+                    continue
                 part_name = norm_text(row.get("ComponentName")) or norm_text(row.get("component_name"))
                 part_number = norm_text(row.get("PartNumber")) or norm_text(row.get("part_number"))
                 key = (part_name.lower(), part_number.lower())
@@ -517,6 +520,7 @@ class ModulePage(BasePage):
                     continue
                 seen.add(key)
                 parts.append({
+                    "component_id": norm_text(row.get("ComponentID")),
                     "name": part_name,
                     "part_number": part_number,
                     "qty": row.get("Qty", ""),
@@ -551,6 +555,7 @@ class ModulePage(BasePage):
         combo["values"] = list(getattr(combo, "_all_values", list(combo.cget("values"))))
 
     def _apply_existing_component_part(self, part):
+        self.selected_existing_part_id = part.get("component_id", "")
         self.component_name_var.set(part["name"])
         self.component_partno_var.set(part["part_number"])
         if not norm_text(self.component_qty_var.get()):
@@ -1214,6 +1219,7 @@ class ModulePage(BasePage):
 
     def clear_component_editor(self):
         self.current_component_id = None
+        self.selected_existing_part_id = ""
         self.component_name_var.set("")
         self.component_qty_var.set("")
         self.component_soh_var.set("")
