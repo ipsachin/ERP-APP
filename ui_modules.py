@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 import tkinter as tk
 from tkinter import ttk, filedialog
 from typing import Dict, List, Optional
@@ -564,6 +565,20 @@ class ModulePage(BasePage):
         self.component_supplier_var.set(part["supplier"])
         self.component_lead_var.set(str(part["lead"] or ""))
         self.component_notes_var.set(part["notes"])
+
+    def _merge_source_part_id(self, notes):
+        source_part_id = norm_text(getattr(self, "selected_existing_part_id", ""))
+        notes = norm_text(notes)
+        if not source_part_id:
+            return notes
+        tag = f"SourcePartID={source_part_id}"
+        if "SourcePartID=" in notes:
+            return re.sub(r"SourcePartID=[^|]+", tag, notes).strip()
+        return f"{notes} | {tag}" if notes else tag
+
+    def _extract_source_part_id(self, notes):
+        match = re.search(r"SourcePartID=([^|]+)", norm_text(notes))
+        return norm_text(match.group(1)) if match else ""
 
     def _on_component_name_selected(self, event=None):
         selected_name = norm_text(self.component_name_var.get()).lower()
@@ -1251,7 +1266,7 @@ class ModulePage(BasePage):
                 preferred_supplier=self.component_supplier_var.get().strip(),
                 lead_time_days=lead_time_days,
                 part_number=self.component_partno_var.get().strip(),
-                notes=self.component_notes_var.get().strip(),
+                notes=self._merge_source_part_id(self.component_notes_var.get()),
             )
 
             self.clear_component_editor()
@@ -1291,6 +1306,7 @@ class ModulePage(BasePage):
         self.component_lead_var.set(str(selected.lead_time_days))
         self.component_partno_var.set(selected.part_number)
         self.component_notes_var.set(selected.notes)
+        self.selected_existing_part_id = self._extract_source_part_id(selected.notes)
 
     def update_selected_component(self):
         if not self.require_workbook():
@@ -1315,7 +1331,7 @@ class ModulePage(BasePage):
                     "PreferredSupplier": self.component_supplier_var.get().strip(),
                     "LeadTimeDays": lead_time_days,
                     "PartNumber": self.component_partno_var.get().strip(),
-                    "Notes": self.component_notes_var.get().strip(),
+                    "Notes": self._merge_source_part_id(self.component_notes_var.get()),
                 }
             )
 

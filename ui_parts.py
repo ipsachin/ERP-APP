@@ -32,6 +32,14 @@ class PartsPage(BasePage):
         super().__init__(master, app, **kwargs)
         self.search_var = tk.StringVar()
         self.price_var = tk.StringVar()
+        self.edit_part_name_var = tk.StringVar()
+        self.edit_part_number_var = tk.StringVar()
+        self.edit_qty_var = tk.StringVar()
+        self.edit_soh_var = tk.StringVar()
+        self.edit_supplier_var = tk.StringVar()
+        self.edit_lead_var = tk.StringVar()
+        self.edit_price_var = tk.StringVar()
+        self.edit_notes_var = tk.StringVar()
         self.parts_rows = []
         self._build_ui()
 
@@ -51,7 +59,6 @@ class PartsPage(BasePage):
         ttk.Label(search_row, text="Search").pack(side="left")
         ent = ttk.Entry(search_row, textvariable=self.search_var)
         ent.pack(side="left", fill="x", expand=True, padx=8)
-        ent.bind("<KeyRelease>", lambda e: self.refresh_parts())
         ttk.Button(search_row, text="Open Selected", command=self.open_selected_part).pack(side="left")
 
         add_card = ttk.LabelFrame(wrapper, text="Add New Part", padding=10)
@@ -133,19 +140,25 @@ class PartsPage(BasePage):
         form = ttk.Frame(detail_card)
         form.pack(fill="x", pady=(0, 8))
 
-        ttk.Label(form, text="Unit Price").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=4)
-        ttk.Entry(form, textvariable=self.price_var).grid(row=0, column=1, sticky="ew", pady=4)
-        ttk.Button(form, text="Save Price", command=self.save_selected_price).grid(row=0, column=2, padx=(8, 0), pady=4)
-        form.columnconfigure(1, weight=1)
+        fields = [
+            ("Part Name", self.edit_part_name_var),
+            ("Part Number", self.edit_part_number_var),
+            ("Qty", self.edit_qty_var),
+            ("SOH Qty", self.edit_soh_var),
+            ("Supplier", self.edit_supplier_var),
+            ("Lead Time", self.edit_lead_var),
+            ("Unit Price", self.edit_price_var),
+            ("Notes", self.edit_notes_var),
+        ]
+        for r, (label, var) in enumerate(fields):
+            ttk.Label(form, text=label).grid(row=r, column=0, sticky="w", padx=(0, 6), pady=4)
+            ttk.Entry(form, textvariable=var).grid(row=r, column=1, sticky="ew", pady=4)
 
-        note = ttk.Label(
-            detail_card,
-            text="Price is saved into component Notes as UnitPrice=<value> and used by quote/summary patches.",
-            style="Sub.TLabel",
-            wraplength=320,
-            justify="left",
-        )
-        note.pack(anchor="w", pady=(0, 8))
+        btn_row = ttk.Frame(form)
+        btn_row.grid(row=len(fields), column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(btn_row, text="Save Part", command=self.save_selected_part).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        ttk.Button(btn_row, text="Delete Part", command=self.delete_selected_part).pack(side="left", fill="x", expand=True, padx=(4, 0))
+        form.columnconfigure(1, weight=1)
 
         self.detail_text = tk.Text(detail_card, wrap="word")
         dscroll = ttk.Scrollbar(detail_card, orient="vertical", command=self.detail_text.yview)
@@ -189,6 +202,7 @@ class PartsPage(BasePage):
             "SOHQty": soh_qty,
             "PreferredSupplier": supplier,
             "LeadTimeDays": lead_time,
+            "UnitPrice": price,
             "PartNumber": part_number,
             "Notes": notes,
             "CreatedOn": "",
@@ -242,14 +256,18 @@ class PartsPage(BasePage):
             if hasattr(self.app.services, "parts") and hasattr(self.app.services.parts, "list_parts"):
                 for p in self.app.services.parts.list_parts():
                     notes = norm_text(getattr(p, "notes", ""))
+                    unit_price = safe_float(getattr(p, "unit_price", 0)) or self._extract_unit_price(notes)
                     rows.append({
+                        "component_id": norm_text(getattr(p, "component_id", "")),
+                        "owner_type": norm_text(getattr(p, "owner_type", "")),
+                        "owner_code": norm_text(getattr(p, "owner_code", "")),
                         "part_name": norm_text(getattr(p, "part_name", "")) or norm_text(getattr(p, "component_name", "")),
                         "part_number": norm_text(getattr(p, "part_number", "")) or norm_text(getattr(p, "part_code", "")),
                         "qty": safe_float(getattr(p, "qty", 0)),
                         "soh_qty": safe_float(getattr(p, "soh_qty", 0)),
                         "supplier": norm_text(getattr(p, "preferred_supplier", "")) or norm_text(getattr(p, "supplier", "")),
                         "lead_time": norm_text(getattr(p, "lead_time_days", "")),
-                        "unit_price": self._extract_unit_price(notes),
+                        "unit_price": unit_price,
                         "source": "Parts",
                         "notes": notes,
                     })
@@ -258,43 +276,27 @@ class PartsPage(BasePage):
             pass
 
         try:
-            modules = self.app.services.modules.list_modules()
-            for mod in modules:
-                comps = self.app.services.modules.get_module_components(mod.module_code)
-                for c in comps:
-                    notes = norm_text(getattr(c, "notes", ""))
+            repo = getattr(self.app, "repo", None)
+            if repo is not None:
+                for r in repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS):
+                    if norm_text(r.get("OwnerType")) != "PART":
+                        continue
+                    notes = norm_text(r.get("Notes"))
+                    unit_price = safe_float(r.get("UnitPrice")) or self._extract_unit_price(notes)
                     rows.append({
-                        "part_name": norm_text(getattr(c, "component_name", "")),
-                        "part_number": norm_text(getattr(c, "part_number", "")),
-                        "qty": safe_float(getattr(c, "qty", 0)),
-                        "soh_qty": safe_float(getattr(c, "soh_qty", 0)),
-                        "supplier": norm_text(getattr(c, "preferred_supplier", "")),
-                        "lead_time": norm_text(getattr(c, "lead_time_days", "")),
-                        "unit_price": self._extract_unit_price(notes),
-                        "source": f"Assembly {mod.module_code}",
+                        "component_id": norm_text(r.get("ComponentID")),
+                        "owner_type": norm_text(r.get("OwnerType")),
+                        "owner_code": norm_text(r.get("OwnerCode")),
+                        "part_name": norm_text(r.get("ComponentName")),
+                        "part_number": norm_text(r.get("PartNumber")),
+                        "qty": safe_float(r.get("Qty")),
+                        "soh_qty": safe_float(r.get("SOHQty")),
+                        "supplier": norm_text(r.get("PreferredSupplier")),
+                        "lead_time": norm_text(r.get("LeadTimeDays")),
+                        "unit_price": unit_price,
+                        "source": "Parts",
                         "notes": notes,
                     })
-        except Exception:
-            pass
-
-        try:
-            products = self.app.services.products.list_products()
-            for prod in products:
-                if hasattr(self.app.services.products, "get_product_bundle"):
-                    bundle = self.app.services.products.get_product_bundle(prod.product_code)
-                    for c in getattr(bundle, "direct_components", []) or []:
-                        notes = norm_text(getattr(c, "notes", ""))
-                        rows.append({
-                            "part_name": norm_text(getattr(c, "component_name", "")),
-                            "part_number": norm_text(getattr(c, "part_number", "")),
-                            "qty": safe_float(getattr(c, "qty", 0)),
-                            "soh_qty": safe_float(getattr(c, "soh_qty", 0)),
-                            "supplier": norm_text(getattr(c, "preferred_supplier", "")),
-                            "lead_time": norm_text(getattr(c, "lead_time_days", "")),
-                            "unit_price": self._extract_unit_price(notes),
-                            "source": f"Product {prod.product_code}",
-                            "notes": notes,
-                        })
         except Exception:
             pass
 
@@ -340,6 +342,14 @@ class PartsPage(BasePage):
         if not row:
             return
         self.price_var.set(f'{row["unit_price"]:.2f}' if row["unit_price"] else "")
+        self.edit_part_name_var.set(row["part_name"])
+        self.edit_part_number_var.set(row["part_number"])
+        self.edit_qty_var.set(f'{row["qty"]:.2f}' if row["qty"] else "")
+        self.edit_soh_var.set(f'{row["soh_qty"]:.2f}' if row["soh_qty"] else "")
+        self.edit_supplier_var.set(row["supplier"])
+        self.edit_lead_var.set(str(row["lead_time"] or ""))
+        self.edit_price_var.set(f'{row["unit_price"]:.2f}' if row["unit_price"] else "")
+        self.edit_notes_var.set(row["notes"])
         lines = [
             "PART DETAILS",
             "------------",
@@ -361,15 +371,18 @@ class PartsPage(BasePage):
         self.detail_text.configure(state="disabled")
 
     def save_selected_price(self):
+        self.edit_price_var.set(self.price_var.get())
+        self.save_selected_part()
+
+    def save_selected_part(self):
         row = self._selected_row()
         if not row:
             show_warning("No Selection", "Select a part first.")
             return
 
-        try:
-            price = safe_float(self.price_var.get())
-        except Exception:
-            show_warning("Invalid Price", "Enter a valid number.")
+        comp_id = norm_text(row.get("component_id"))
+        if not comp_id:
+            show_warning("No Selection", "Could not identify the selected part row.")
             return
 
         try:
@@ -378,19 +391,30 @@ class PartsPage(BasePage):
                 show_error("Save Error", "Repository not available.")
                 return
 
-            rows = repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS)
-            changed = 0
-            for r in rows:
-                pn = norm_text(r.get("PartNumber"))
-                name = norm_text(r.get("ComponentName"))
-                if (row["part_number"] and pn == row["part_number"]) or (not row["part_number"] and name == row["part_name"]):
-                    notes = norm_text(r.get("Notes"))
-                    new_notes = self._merge_unit_price(notes, price)
-                    comp_id = norm_text(r.get("ComponentID"))
-                    if comp_id:
-                        ok = repo.update_row_by_key_name(AppConfig.SHEET_COMPONENTS, "ComponentID", comp_id, {"Notes": new_notes})
-                        if ok:
-                            changed += 1
+            part_name = norm_text(self.edit_part_name_var.get())
+            if not part_name:
+                show_warning("Missing Data", "Part Name is required.")
+                return
+
+            notes = norm_text(self.edit_notes_var.get())
+            price = safe_float(self.edit_price_var.get())
+            if price:
+                notes = self._merge_unit_price(notes, price)
+
+            updates = {
+                "ComponentName": part_name,
+                "Qty": safe_float(self.edit_qty_var.get()),
+                "SOHQty": safe_float(self.edit_soh_var.get()),
+                "PreferredSupplier": norm_text(self.edit_supplier_var.get()),
+                "LeadTimeDays": norm_text(self.edit_lead_var.get()),
+                "UnitPrice": price,
+                "PartNumber": norm_text(self.edit_part_number_var.get()),
+                "Notes": notes,
+            }
+            if "UpdatedOn" in AppConfig.COMPONENT_HEADERS:
+                updates["UpdatedOn"] = ""
+
+            changed = repo.update_row_by_key_name(AppConfig.SHEET_COMPONENTS, "ComponentID", comp_id, updates)
 
             if hasattr(repo, "save_workbook"):
                 try:
@@ -398,14 +422,218 @@ class PartsPage(BasePage):
                 except Exception:
                     pass
 
-            if changed == 0:
-                show_warning("No Rows Updated", "No matching component rows were found to store the price.")
+            if not changed:
+                show_warning("No Rows Updated", "The selected part row was not found.")
                 return
 
-            show_info("Price Saved", f"Updated unit price on {changed} component row(s).")
+            show_info("Part Saved", f"Updated part: {part_name}")
             self.refresh_parts()
         except Exception as exc:
             show_error("Save Error", str(exc))
+
+    def _part_matches_row(self, candidate, row):
+        if norm_text(candidate.get("OwnerType")) == "PART":
+            return False
+        comp_id = norm_text(row.get("component_id"))
+        if comp_id and f"SourcePartID={comp_id}" in norm_text(candidate.get("Notes")):
+            return True
+        part_number = norm_text(row.get("part_number"))
+        part_name = norm_text(row.get("part_name"))
+        candidate_part_number = norm_text(candidate.get("PartNumber"))
+        candidate_name = norm_text(candidate.get("ComponentName"))
+        if part_number and candidate_part_number:
+            return candidate_part_number.lower() == part_number.lower()
+        return bool(part_name and candidate_name and candidate_name.lower() == part_name.lower())
+
+    def _find_part_associations(self, row):
+        return [item["display"] for item in self._find_part_association_rows(row)]
+
+    def _find_part_association_rows(self, row):
+        associations = []
+        repo = getattr(self.app, "repo", None)
+        if repo is None:
+            return associations
+
+        try:
+            rows = repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS)
+        except Exception:
+            return associations
+
+        for candidate in rows:
+            if not self._part_matches_row(candidate, row):
+                continue
+            owner_type = norm_text(candidate.get("OwnerType")) or "UNKNOWN"
+            owner_code = norm_text(candidate.get("OwnerCode")) or "-"
+            component_name = norm_text(candidate.get("ComponentName")) or norm_text(row.get("part_name"))
+            associations.append({
+                "component_id": norm_text(candidate.get("ComponentID")),
+                "display": f"{owner_type}: {owner_code} ({component_name})",
+            })
+
+        deduped = {}
+        for association in associations:
+            key = association["component_id"] or association["display"]
+            deduped[key] = association
+        return sorted(deduped.values(), key=lambda item: item["display"])
+
+    def _confirm_delete_part(self, row, associations):
+        dialog = tk.Toplevel(self)
+        dialog.title("Delete Part")
+        dialog.transient(self.winfo_toplevel())
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        result = {"delete": False, "delete_associations": False}
+        understands_var = tk.BooleanVar(value=False)
+        delete_associations_var = tk.BooleanVar(value=False)
+
+        body = ttk.Frame(dialog, padding=14)
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(
+            body,
+            text=f'Delete part "{row["part_name"]}" from the parts database?',
+            style="Title.TLabel",
+            wraplength=520,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+
+        ttk.Label(
+            body,
+            text="This removes the master part record.",
+            wraplength=520,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+
+        if associations:
+            ttk.Label(
+                body,
+                text="This part appears to be used by:",
+                wraplength=520,
+                justify="left",
+            ).pack(anchor="w")
+
+            assoc_text = tk.Text(body, height=min(8, max(3, len(associations))), width=70, wrap="word")
+            assoc_text.pack(fill="x", pady=(4, 8))
+            assoc_text.insert("1.0", "\n".join(f' - {item["display"]}' for item in associations[:20]))
+            if len(associations) > 20:
+                assoc_text.insert("end", f"\n - ...and {len(associations) - 20} more")
+            assoc_text.configure(state="disabled")
+
+            ttk.Checkbutton(
+                body,
+                text="Also delete this part from all associated assemblies, products, and projects.",
+                variable=delete_associations_var,
+            ).pack(anchor="w", pady=(0, 8))
+        else:
+            ttk.Label(
+                body,
+                text="No associated assembly, product, or project BOM rows were found.",
+                wraplength=520,
+                justify="left",
+            ).pack(anchor="w", pady=(0, 8))
+
+        confirm_check = ttk.Checkbutton(
+            body,
+            text="I understand this deletion cannot be undone.",
+            variable=understands_var,
+        )
+        confirm_check.pack(anchor="w", pady=(0, 12))
+
+        btn_row = ttk.Frame(body)
+        btn_row.pack(fill="x")
+
+        delete_btn = ttk.Button(btn_row, text="Delete", state="disabled")
+        cancel_btn = ttk.Button(btn_row, text="Cancel")
+        cancel_btn.pack(side="right", padx=(8, 0))
+        delete_btn.pack(side="right")
+
+        def _sync_delete_state(*_args):
+            delete_btn.configure(state="normal" if understands_var.get() else "disabled")
+
+        def _cancel():
+            dialog.destroy()
+
+        def _delete():
+            result["delete"] = True
+            result["delete_associations"] = bool(delete_associations_var.get())
+            dialog.destroy()
+
+        understands_var.trace_add("write", _sync_delete_state)
+        delete_btn.configure(command=_delete)
+        cancel_btn.configure(command=_cancel)
+        dialog.protocol("WM_DELETE_WINDOW", _cancel)
+
+        dialog.update_idletasks()
+        parent = self.winfo_toplevel()
+        x = parent.winfo_rootx() + max(0, (parent.winfo_width() - dialog.winfo_width()) // 2)
+        y = parent.winfo_rooty() + max(0, (parent.winfo_height() - dialog.winfo_height()) // 2)
+        dialog.geometry(f"+{x}+{y}")
+        dialog.wait_window()
+        return result
+
+    def delete_selected_part(self):
+        row = self._selected_row()
+        if not row:
+            show_warning("No Selection", "Select a part first.")
+            return
+
+        comp_id = norm_text(row.get("component_id"))
+        if not comp_id:
+            show_warning("No Selection", "Could not identify the selected part row.")
+            return
+
+        associations = self._find_part_association_rows(row)
+        confirmation = self._confirm_delete_part(row, associations)
+        if not confirmation["delete"]:
+            return
+
+        try:
+            repo = getattr(self.app, "repo", None)
+            if repo is None:
+                show_error("Delete Error", "Repository not available.")
+                return
+
+            associated_deleted = 0
+            if confirmation["delete_associations"]:
+                for association in associations:
+                    assoc_id = norm_text(association.get("component_id"))
+                    if assoc_id and repo.delete_row_by_key_name(AppConfig.SHEET_COMPONENTS, "ComponentID", assoc_id):
+                        associated_deleted += 1
+
+            deleted = repo.delete_row_by_key_name(AppConfig.SHEET_COMPONENTS, "ComponentID", comp_id)
+            if hasattr(repo, "save_workbook"):
+                try:
+                    repo.save_workbook()
+                except Exception:
+                    pass
+
+            if not deleted:
+                show_warning("Not Deleted", "The selected part row was not found.")
+                return
+
+            message = f'Deleted part: {row["part_name"]}'
+            if confirmation["delete_associations"]:
+                message += f"\nDeleted associated BOM rows: {associated_deleted}"
+            show_info("Part Deleted", message)
+            self._clear_part_editor()
+            self.refresh_parts()
+        except Exception as exc:
+            show_error("Delete Error", str(exc))
+
+    def _clear_part_editor(self):
+        self.price_var.set("")
+        self.edit_part_name_var.set("")
+        self.edit_part_number_var.set("")
+        self.edit_qty_var.set("")
+        self.edit_soh_var.set("")
+        self.edit_supplier_var.set("")
+        self.edit_lead_var.set("")
+        self.edit_price_var.set("")
+        self.edit_notes_var.set("")
+        self.detail_text.configure(state="normal")
+        self.detail_text.delete("1.0", "end")
+        self.detail_text.configure(state="disabled")
 
     def open_selected_part(self):
         row = self._selected_row()
