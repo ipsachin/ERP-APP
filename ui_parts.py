@@ -183,6 +183,20 @@ class PartsPage(BasePage):
             show_error("Save Error", "Repository not available.")
             return
 
+        existing = repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS)
+        if part_number:
+            for row in existing:
+                if norm_text(row.get("OwnerType")) != "PART":
+                    continue
+                if norm_text(row.get("PartNumber")).lower() != part_number.lower():
+                    continue
+                existing_name = norm_text(row.get("ComponentName")) or "Unnamed part"
+                show_warning(
+                    "Part Already Exists",
+                    f'A part with part number "{part_number}" already exists:\n\n{existing_name}\n\nThe new part was not added.',
+                )
+                return
+
         qty = safe_float(self.new_qty_var.get())
         soh_qty = safe_float(self.new_soh_var.get())
         supplier = norm_text(self.new_supplier_var.get())
@@ -193,7 +207,6 @@ class PartsPage(BasePage):
         if price:
             notes = f"{notes} | UnitPrice={price:.2f}" if notes else f"UnitPrice={price:.2f}"
 
-        existing = repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS)
         new_id = f"CMP-{len(existing)+1:05d}"
 
         row = {

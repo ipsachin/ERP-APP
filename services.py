@@ -2737,6 +2737,14 @@ def _module_add_part(self, component_name: str, qty: float = 0.0, soh_qty: float
     self._require_workbook()
     if not norm_text(component_name):
         raise ValueError("Part name is required.")
+    part_number = norm_text(part_number)
+    if part_number:
+        rows = self.repo.read_sheet_as_dicts(AppConfig.SHEET_COMPONENTS)
+        for row in rows:
+            if norm_text(row.get("OwnerType")) != "PART":
+                continue
+            if norm_text(row.get("PartNumber")).lower() == part_number.lower():
+                raise ValueError(f'Part number already exists: {part_number}')
     component_id = CodeFactory.component_id(owner_code, component_name)
     ts = now_str()
     self.repo.append_dict(AppConfig.SHEET_COMPONENTS, {
@@ -2748,7 +2756,7 @@ def _module_add_part(self, component_name: str, qty: float = 0.0, soh_qty: float
         "SOHQty": to_float(soh_qty),
         "PreferredSupplier": norm_text(preferred_supplier),
         "LeadTimeDays": to_int(lead_time_days),
-        "PartNumber": norm_text(part_number),
+        "PartNumber": part_number,
         "Notes": norm_text(notes),
         "CreatedOn": ts,
         "UpdatedOn": ts,
