@@ -19,12 +19,33 @@ def get_app_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def get_version_file_candidates() -> list[Path]:
+    app_dir = get_app_dir()
+    bundle_dir = get_bundle_dir()
+    return [
+        app_dir / "VERSION",
+        bundle_dir / "VERSION",
+        Path(__file__).resolve().parent / "VERSION",
+    ]
+
+
+def load_app_version(default: str = "0.0.0") -> str:
+    for path in get_version_file_candidates():
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            continue
+        if value:
+            return value
+    return default
+
+
 class AppConfig:
     # --------------------------------------------------------
     # Application
     # --------------------------------------------------------
     APP_TITLE = "Liquimech Project Management Suite"
-    APP_VERSION = "1.0.0"
+    APP_VERSION = load_app_version("1.0.0")
     WINDOW_WIDTH = 1840
     WINDOW_HEIGHT = 1040
     MIN_WIDTH = 1440
@@ -34,6 +55,8 @@ class AppConfig:
     GITHUB_RELEASE_ASSET_NAME = "LiquimechERP-Setup.exe"
     ENABLE_STARTUP_UPDATE_CHECK = True
     GITHUB_RELEASE_CHECK_INTERVAL_SECONDS = 86400
+    ENABLE_ONLINE_AUTO_REFRESH = True
+    ONLINE_REFRESH_INTERVAL_MS = 5000
 
     # --------------------------------------------------------
     # Theme / UI

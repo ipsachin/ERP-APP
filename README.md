@@ -474,7 +474,7 @@ Do not send only the `.exe` from a `--onedir` build, because it depends on the o
 
 Use this checklist when preparing a new release:
 
-1. Update the app version in the code and installer files if needed.
+1. Update the `VERSION` file if needed.
 2. Activate the project virtual environment.
 3. Run the app locally and confirm the main workflows still open correctly.
 4. If dependencies changed, run `python generate_requirements.py` and review the updated `requirements.txt`.

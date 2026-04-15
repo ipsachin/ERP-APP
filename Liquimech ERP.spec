@@ -13,6 +13,7 @@ app_datas = [
     ('assets', 'assets'),
     ('workspace/data', 'workspace/data'),
     ('certs', 'certs'),
+    ('VERSION', '.'),
 ]
 
 if (project_root / '.env').exists():

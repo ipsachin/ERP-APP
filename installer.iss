@@ -1,7 +1,9 @@
+#define MyAppVersion Trim(FileRead("VERSION"))
+
 [Setup]
 AppId={{8B1D0E0B-4F15-4CB7-BB7A-3A91A3A6D8E2}
 AppName=Liquimech ERP
-AppVersion=1.0.0
+AppVersion={#MyAppVersion}
 AppPublisher=Liquimech
 AppPublisherURL=https://liquimech.com.au
 AppSupportURL=https://liquimech.com.au

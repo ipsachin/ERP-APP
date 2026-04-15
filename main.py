@@ -33,6 +33,9 @@ from ui_parts import PartsPage
 class ERPDesktopApp:
     def __init__(self, root: tk.Tk):
         self.root = root
+        self._save_job = None
+        self._online_refresh_job = None
+        self._online_refresh_in_progress = False
 
         AppConfig.ensure_directories()
         self.workbook_manager = WorkbookManager()
@@ -78,9 +81,11 @@ class ERPDesktopApp:
         self._build_menu()
         self._build_shell()
         self._build_pages()
+        self.root.protocol("WM_DELETE_WINDOW", self._handle_close)
 
         self.show_page("home")
         self._schedule_startup_update_check()
+        self._schedule_online_refresh(initial=True)
 
     # ========================================================
     # Shell
@@ -141,6 +146,35 @@ class ERPDesktopApp:
         if not AppConfig.ENABLE_STARTUP_UPDATE_CHECK:
             return
         self.root.after(2000, lambda: self.check_for_updates(manual=False))
+
+    def _schedule_online_refresh(self, initial: bool = False):
+        if not self.workbook_manager.uses_online():
+            return
+        if not AppConfig.ENABLE_ONLINE_AUTO_REFRESH:
+            return
+        if self._online_refresh_job:
+            self.root.after_cancel(self._online_refresh_job)
+            self._online_refresh_job = None
+        delay_ms = 2000 if initial else AppConfig.ONLINE_REFRESH_INTERVAL_MS
+        self._online_refresh_job = self.root.after(delay_ms, self._run_online_refresh)
+
+    def _run_online_refresh(self):
+        self._online_refresh_job = None
+        if not self.workbook_manager.uses_online():
+            return
+        if self._online_refresh_in_progress:
+            self._schedule_online_refresh()
+            return
+
+        self._online_refresh_in_progress = True
+        try:
+            self.repo.reload_cache()
+            self.refresh_visible_pages()
+        except Exception as exc:
+            self.set_status(f"Online refresh warning: {exc}")
+        finally:
+            self._online_refresh_in_progress = False
+            self._schedule_online_refresh()
 
     def _build_pages(self):
         page_classes = [
@@ -316,6 +350,15 @@ class ERPDesktopApp:
                 self.repo.save_workbook()
         except Exception as exc:
             self.set_status(f"Save warning: {exc}")
+
+    def _handle_close(self):
+        if self._save_job:
+            self.root.after_cancel(self._save_job)
+            self._save_job = None
+        if self._online_refresh_job:
+            self.root.after_cancel(self._online_refresh_job)
+            self._online_refresh_job = None
+        self.root.destroy()
 
 
 # ============================================================
