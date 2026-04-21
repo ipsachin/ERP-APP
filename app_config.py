@@ -55,7 +55,7 @@ class AppConfig:
     GITHUB_RELEASE_ASSET_NAME = "LiquimechERP-Setup.exe"
     ENABLE_STARTUP_UPDATE_CHECK = True
     GITHUB_RELEASE_CHECK_INTERVAL_SECONDS = 86400
-    ENABLE_ONLINE_AUTO_REFRESH = True
+    ENABLE_ONLINE_AUTO_REFRESH = False
     ONLINE_REFRESH_INTERVAL_MS = 5000
 
     # --------------------------------------------------------
