@@ -1,4 +1,6 @@
-#define MyAppVersion Trim(FileRead("VERSION"))
+#define MyAppVersionFileHandle FileOpen("VERSION")
+#define MyAppVersion Trim(FileRead(MyAppVersionFileHandle))
+#expr FileClose(MyAppVersionFileHandle)
 
 [Setup]
 AppId={{8B1D0E0B-4F15-4CB7-BB7A-3A91A3A6D8E2}
